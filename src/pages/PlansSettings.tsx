@@ -67,6 +67,16 @@ export default function PlansSettings() {
     setIsDialogOpen(false);
   };
 
+  const sanitizeFileName = (name: string) => {
+    const [base, extension] = name.split(/\.(?=[^.]+$)/);
+    const normalized = base
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .replace(/[^a-zA-Z0-9_-]+/g, '_');
+
+    return `${normalized}${extension ? `.${extension}` : ''}`;
+  };
+
   const handleFileUpload = async (planId: string, file: File) => {
     if (!file.name.endsWith('.docx')) {
       toast({
@@ -80,10 +90,11 @@ export default function PlansSettings() {
     setUploading(planId);
 
     try {
-      const fileName = `${planId}/${Date.now()}_${file.name}`;
+      const sanitizedName = sanitizeFileName(file.name);
+      const fileName = `${planId}/${Date.now()}_${sanitizedName}`;
       const { error: uploadError } = await supabase.storage
         .from('templates')
-        .upload(fileName, file);
+        .upload(fileName, file, { contentType: file.type, upsert: true });
 
       if (uploadError) throw uploadError;
 
