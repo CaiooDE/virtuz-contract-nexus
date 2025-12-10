@@ -7,6 +7,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithTestAccount: () => Promise<void>;
   signOut: () => Promise<void>;
   isAuthorizedDomain: boolean;
 }
@@ -14,6 +15,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const ALLOWED_DOMAIN = 'virtuzmidia.com.br';
+const TEST_ACCOUNT_EMAIL = 'test.auth@virtuzmidia.com.br';
+const TEST_ACCOUNT_PASSWORD = 'VirtuzTest123!';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -58,6 +61,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInWithTestAccount = async () => {
+    const signInResult = await supabase.auth.signInWithPassword({
+      email: TEST_ACCOUNT_EMAIL,
+      password: TEST_ACCOUNT_PASSWORD,
+    });
+
+    if (!signInResult.error) {
+      return;
+    }
+
+    const signUpResult = await supabase.auth.signUp({
+      email: TEST_ACCOUNT_EMAIL,
+      password: TEST_ACCOUNT_PASSWORD,
+      options: {
+        emailRedirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+
+    if (signUpResult.error) {
+      throw signUpResult.error;
+    }
+
+    if (!signUpResult.session) {
+      const retrySignIn = await supabase.auth.signInWithPassword({
+        email: TEST_ACCOUNT_EMAIL,
+        password: TEST_ACCOUNT_PASSWORD,
+      });
+
+      if (retrySignIn.error) {
+        throw retrySignIn.error;
+      }
+    }
+  };
+
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -68,11 +105,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{ 
       user, 
-      session, 
-      loading, 
-      signInWithGoogle, 
+      session,
+      loading,
+      signInWithGoogle,
+      signInWithTestAccount,
       signOut,
-      isAuthorizedDomain 
+      isAuthorizedDomain
     }}>
       {children}
     </AuthContext.Provider>
