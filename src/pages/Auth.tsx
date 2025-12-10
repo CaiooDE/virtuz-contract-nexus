@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 
 export default function Auth() {
-  const { user, loading, signInWithGoogle, isAuthorizedDomain } = useAuth();
+  const { user, loading, signInWithGoogle, signInWithTestAccount, isAuthorizedDomain } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -28,6 +28,18 @@ export default function Auth() {
       toast({
         title: 'Erro ao fazer login',
         description: error instanceof Error ? error.message : 'Ocorreu um erro inesperado',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleTestAccountSignIn = async () => {
+    try {
+      await signInWithTestAccount();
+    } catch (error) {
+      toast({
+        title: 'Erro ao acessar conta de teste',
+        description: error instanceof Error ? error.message : 'Não foi possível autenticar com a conta de teste',
         variant: 'destructive',
       });
     }
@@ -78,6 +90,14 @@ export default function Auth() {
               />
             </svg>
             Entrar com Google
+          </Button>
+          <Button
+            className="w-full"
+            size="lg"
+            variant="secondary"
+            onClick={handleTestAccountSignIn}
+          >
+            Usar conta de teste temporária
           </Button>
           <p className="text-xs text-muted-foreground text-center">
             Use seu e-mail @virtuzmidia.com.br para acessar
