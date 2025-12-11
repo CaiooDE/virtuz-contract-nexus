@@ -1,1 +1,4 @@
 project_id = "tdmvukaqoexseetucmvt"
+
+[functions.parse-docx]
+verify_jwt = false

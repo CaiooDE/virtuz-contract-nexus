@@ -40,8 +40,13 @@ export default function TemplateEditorPage() {
     const loadContent = async () => {
       if (!plan) return;
       
-      // If we already have template_content, use it
-      if (plan.template_content) {
+      // If we have valid template_content (not just empty <p></p>), use it
+      const hasValidContent = plan.template_content && 
+        plan.template_content.trim() !== '' && 
+        plan.template_content.trim() !== '<p></p>' &&
+        plan.template_content.trim() !== '<p>&nbsp;</p>';
+        
+      if (hasValidContent) {
         setContent(plan.template_content);
         return;
       }
@@ -52,19 +57,24 @@ export default function TemplateEditorPage() {
         setDocxError(null);
         
         try {
+          console.log('Calling parse-docx for URL:', plan.template_url);
           const { data, error } = await supabase.functions.invoke('parse-docx', {
             body: { template_url: plan.template_url },
           });
           
+          console.log('parse-docx response:', { data, error });
+          
           if (error) throw error;
           
-          if (data?.html) {
+          if (data?.html && data.html.trim() !== '<p></p>') {
             setContent(data.html);
             // Auto-save the parsed content to template_content
             await updatePlan.mutateAsync({
               id: plan.id,
               template_content: data.html,
             });
+          } else {
+            throw new Error('O arquivo DOCX está vazio ou não pôde ser lido');
           }
         } catch (error) {
           console.error('Error parsing DOCX:', error);
