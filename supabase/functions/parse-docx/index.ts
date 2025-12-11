@@ -1,207 +1,83 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
-// Simple DOCX parser that extracts text from the document.xml inside the DOCX file
-async function extractTextFromDocx(docxArrayBuffer: ArrayBuffer): Promise<string> {
-  const uint8Array = new Uint8Array(docxArrayBuffer);
-  
-  // DOCX is a ZIP file, we need to find and extract document.xml
-  // ZIP file structure: local file header + file data + central directory
-  
-  const textDecoder = new TextDecoder("utf-8");
-  const fileContent = textDecoder.decode(uint8Array);
-  
-  // Look for the document.xml content within the DOCX
-  // The actual XML content is between specific markers
-  const documentXmlStart = fileContent.indexOf("<w:document");
-  const documentXmlEnd = fileContent.lastIndexOf("</w:document>") + "</w:document>".length;
-  
-  if (documentXmlStart === -1 || documentXmlEnd <= documentXmlStart) {
-    throw new Error("Could not find document content in DOCX file");
-  }
-  
-  const documentXml = fileContent.substring(documentXmlStart, documentXmlEnd);
-  
-  // Extract text from XML
-  // <w:t> tags contain the actual text
-  const textMatches = documentXml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g);
-  const paragraphMatches = documentXml.matchAll(/<w:p[^>]*>/g);
-  
-  // Build the text content preserving paragraph structure
-  let result = "";
-  let lastIndex = 0;
-  
-  // Simple approach: collect all text nodes
-  const texts: string[] = [];
-  for (const match of textMatches) {
-    texts.push(match[1]);
-  }
-  
-  // Now build HTML with paragraphs
-  let html = "";
-  let currentParagraph = "";
-  let inParagraph = false;
-  
-  // More sophisticated parsing: go through the XML sequentially
-  let pos = 0;
-  while (pos < documentXml.length) {
-    // Check for paragraph start
-    const pStart = documentXml.indexOf("<w:p", pos);
-    const pEnd = documentXml.indexOf("</w:p>", pos);
-    
-    if (pStart === -1) break;
-    
-    // Find the end of this paragraph
-    const paragraphEnd = documentXml.indexOf("</w:p>", pStart);
-    if (paragraphEnd === -1) break;
-    
-    const paragraphContent = documentXml.substring(pStart, paragraphEnd + 6);
-    
-    // Extract text from this paragraph
-    const paragraphTexts: string[] = [];
-    const textRegex = /<w:t[^>]*>([^<]*)<\/w:t>/g;
-    let textMatch;
-    while ((textMatch = textRegex.exec(paragraphContent)) !== null) {
-      paragraphTexts.push(textMatch[1]);
-    }
-    
-    // Check if this paragraph has bold formatting
-    const isBold = paragraphContent.includes("<w:b/>") || paragraphContent.includes("<w:b ") || paragraphContent.includes("<w:b>");
-    
-    const paragraphText = paragraphTexts.join("");
-    if (paragraphText.trim()) {
-      if (isBold) {
-        html += `<p><strong>${paragraphText}</strong></p>`;
-      } else {
-        html += `<p>${paragraphText}</p>`;
-      }
-    } else {
-      html += "<p></p>";
-    }
-    
-    pos = paragraphEnd + 6;
-  }
-  
-  return html || "<p></p>";
-}
+// Use fflate for ZIP decompression - a fast, pure JS library
+import { unzipSync } from "https://esm.sh/fflate@0.8.2";
 
-// Alternative: Use a more robust approach by fetching from JSZip CDN
-async function parseDocxWithZip(docxUrl: string): Promise<string> {
+async function parseDocxFromUrl(docxUrl: string): Promise<string> {
+  console.log("Fetching DOCX from:", docxUrl);
+  
   // Fetch the DOCX file
   const response = await fetch(docxUrl);
   if (!response.ok) {
-    throw new Error(`Failed to fetch DOCX: ${response.status}`);
+    throw new Error(`Failed to fetch DOCX: ${response.status} ${response.statusText}`);
   }
   
   const arrayBuffer = await response.arrayBuffer();
   const uint8Array = new Uint8Array(arrayBuffer);
   
-  // Find PK header (ZIP signature)
+  console.log("DOCX file size:", uint8Array.length, "bytes");
+  
+  // Check for ZIP signature
   if (uint8Array[0] !== 0x50 || uint8Array[1] !== 0x4B) {
     throw new Error("Not a valid DOCX file (missing ZIP signature)");
   }
   
-  // Find the central directory
-  let centralDirOffset = -1;
-  for (let i = uint8Array.length - 22; i >= 0; i--) {
-    if (uint8Array[i] === 0x50 && uint8Array[i+1] === 0x4B && uint8Array[i+2] === 0x05 && uint8Array[i+3] === 0x06) {
-      centralDirOffset = i;
-      break;
-    }
-  }
-  
-  if (centralDirOffset === -1) {
-    throw new Error("Could not find ZIP central directory");
-  }
-  
-  // Read central directory offset
-  const view = new DataView(arrayBuffer);
-  const cdOffset = view.getUint32(centralDirOffset + 16, true);
-  const cdSize = view.getUint32(centralDirOffset + 12, true);
-  
-  // Parse local file headers to find document.xml
-  let pos = 0;
-  const files: { name: string; offset: number; compressedSize: number; uncompressedSize: number; compressionMethod: number }[] = [];
-  
-  while (pos < uint8Array.length - 4) {
-    if (uint8Array[pos] === 0x50 && uint8Array[pos+1] === 0x4B && uint8Array[pos+2] === 0x03 && uint8Array[pos+3] === 0x04) {
-      const compressionMethod = view.getUint16(pos + 8, true);
-      const compressedSize = view.getUint32(pos + 18, true);
-      const uncompressedSize = view.getUint32(pos + 22, true);
-      const fileNameLength = view.getUint16(pos + 26, true);
-      const extraLength = view.getUint16(pos + 28, true);
-      
-      const fileName = new TextDecoder().decode(uint8Array.slice(pos + 30, pos + 30 + fileNameLength));
-      const dataOffset = pos + 30 + fileNameLength + extraLength;
-      
-      files.push({
-        name: fileName,
-        offset: dataOffset,
-        compressedSize,
-        uncompressedSize,
-        compressionMethod
-      });
-      
-      pos = dataOffset + compressedSize;
-    } else {
-      pos++;
-    }
+  // Unzip the DOCX file
+  let unzipped;
+  try {
+    unzipped = unzipSync(uint8Array);
+  } catch (e) {
+    console.error("Error unzipping:", e);
+    throw new Error("Failed to unzip DOCX file");
   }
   
   // Find word/document.xml
-  const documentFile = files.find(f => f.name === "word/document.xml");
-  if (!documentFile) {
+  const documentXmlBytes = unzipped["word/document.xml"];
+  if (!documentXmlBytes) {
+    console.log("Available files in DOCX:", Object.keys(unzipped));
     throw new Error("Could not find word/document.xml in DOCX");
   }
   
-  let documentXml: string;
-  
-  if (documentFile.compressionMethod === 0) {
-    // No compression (STORE)
-    const xmlBytes = uint8Array.slice(documentFile.offset, documentFile.offset + documentFile.uncompressedSize);
-    documentXml = new TextDecoder().decode(xmlBytes);
-  } else if (documentFile.compressionMethod === 8) {
-    // DEFLATE compression
-    const compressedData = uint8Array.slice(documentFile.offset, documentFile.offset + documentFile.compressedSize);
-    
-    // Use DecompressionStream for deflate-raw
-    const ds = new DecompressionStream("deflate-raw");
-    const writer = ds.writable.getWriter();
-    writer.write(compressedData);
-    writer.close();
-    
-    const reader = ds.readable.getReader();
-    const chunks: Uint8Array[] = [];
-    
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-    
-    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      result.set(chunk, offset);
-      offset += chunk.length;
-    }
-    
-    documentXml = new TextDecoder().decode(result);
-  } else {
-    throw new Error(`Unsupported compression method: ${documentFile.compressionMethod}`);
-  }
+  const documentXml = new TextDecoder("utf-8").decode(documentXmlBytes);
+  console.log("document.xml length:", documentXml.length);
   
   // Parse the XML and extract text with structure
   let html = "";
-  let pos2 = 0;
+  let pos = 0;
   
-  while (pos2 < documentXml.length) {
-    const pStart = documentXml.indexOf("<w:p", pos2);
+  while (pos < documentXml.length) {
+    const pStart = documentXml.indexOf("<w:p", pos);
     if (pStart === -1) break;
     
-    const pEnd = documentXml.indexOf("</w:p>", pStart);
-    if (pEnd === -1) break;
+    // Find the closing tag for this paragraph
+    let depth = 1;
+    let searchPos = pStart + 4;
+    let pEnd = -1;
+    
+    // Find matching </w:p>
+    while (searchPos < documentXml.length && depth > 0) {
+      const nextOpen = documentXml.indexOf("<w:p", searchPos);
+      const nextClose = documentXml.indexOf("</w:p>", searchPos);
+      
+      if (nextClose === -1) break;
+      
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        depth++;
+        searchPos = nextOpen + 4;
+      } else {
+        depth--;
+        if (depth === 0) {
+          pEnd = nextClose;
+        }
+        searchPos = nextClose + 6;
+      }
+    }
+    
+    if (pEnd === -1) {
+      pEnd = documentXml.indexOf("</w:p>", pStart);
+      if (pEnd === -1) break;
+    }
     
     const paragraphContent = documentXml.substring(pStart, pEnd + 6);
     
@@ -210,39 +86,59 @@ async function parseDocxWithZip(docxUrl: string): Promise<string> {
     let runPos = 0;
     
     while (runPos < paragraphContent.length) {
-      const runStart = paragraphContent.indexOf("<w:r>", runPos);
-      const runStartAlt = paragraphContent.indexOf("<w:r ", runPos);
+      // Find w:r tags
+      const runStartMatch = paragraphContent.indexOf("<w:r>", runPos);
+      const runStartMatch2 = paragraphContent.indexOf("<w:r ", runPos);
       
-      let actualRunStart = -1;
-      if (runStart !== -1 && runStartAlt !== -1) {
-        actualRunStart = Math.min(runStart, runStartAlt);
-      } else if (runStart !== -1) {
-        actualRunStart = runStart;
-      } else if (runStartAlt !== -1) {
-        actualRunStart = runStartAlt;
+      let runStart = -1;
+      if (runStartMatch !== -1 && runStartMatch2 !== -1) {
+        runStart = Math.min(runStartMatch, runStartMatch2);
+      } else if (runStartMatch !== -1) {
+        runStart = runStartMatch;
+      } else if (runStartMatch2 !== -1) {
+        runStart = runStartMatch2;
       }
       
-      if (actualRunStart === -1) break;
+      if (runStart === -1) break;
       
-      const runEnd = paragraphContent.indexOf("</w:r>", actualRunStart);
+      const runEnd = paragraphContent.indexOf("</w:r>", runStart);
       if (runEnd === -1) break;
       
-      const runContent = paragraphContent.substring(actualRunStart, runEnd + 6);
+      const runContent = paragraphContent.substring(runStart, runEnd + 6);
       
       // Check formatting in w:rPr
-      const isBold = runContent.includes("<w:b/>") || runContent.includes("<w:b>") || (runContent.includes("<w:b ") && !runContent.includes('w:val="0"'));
-      const isItalic = runContent.includes("<w:i/>") || runContent.includes("<w:i>") || (runContent.includes("<w:i ") && !runContent.includes('w:val="0"'));
-      const isUnderline = runContent.includes("<w:u ");
+      const rPrMatch = runContent.match(/<w:rPr>([\s\S]*?)<\/w:rPr>/);
+      const rPrContent = rPrMatch ? rPrMatch[1] : "";
       
-      // Extract text
-      const textRegex = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+      const isBold = rPrContent.includes("<w:b/>") || 
+                     rPrContent.includes("<w:b>") || 
+                     (rPrContent.includes("<w:b ") && !rPrContent.includes('val="0"') && !rPrContent.includes("val='0'"));
+      
+      const isItalic = rPrContent.includes("<w:i/>") || 
+                       rPrContent.includes("<w:i>") || 
+                       (rPrContent.includes("<w:i ") && !rPrContent.includes('val="0"') && !rPrContent.includes("val='0'"));
+      
+      const isUnderline = rPrContent.includes("<w:u ") && !rPrContent.includes('val="none"');
+      
+      // Extract text from w:t tags
+      const textRegex = /<w:t[^>]*>([\s\S]*?)<\/w:t>/g;
       let textMatch;
       let runText = "";
+      
       while ((textMatch = textRegex.exec(runContent)) !== null) {
         runText += textMatch[1];
       }
       
       if (runText) {
+        // Escape HTML entities
+        runText = runText
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/&amp;lt;/g, "&lt;")
+          .replace(/&amp;gt;/g, "&gt;")
+          .replace(/&amp;amp;/g, "&amp;");
+        
         let formattedText = runText;
         if (isUnderline) formattedText = `<u>${formattedText}</u>`;
         if (isItalic) formattedText = `<em>${formattedText}</em>`;
@@ -256,20 +152,36 @@ async function parseDocxWithZip(docxUrl: string): Promise<string> {
     // Check for list items
     const isListItem = paragraphContent.includes("<w:numPr>");
     
+    // Check for heading styles
+    const styleMatch = paragraphContent.match(/<w:pStyle\s+w:val="([^"]+)"/);
+    const style = styleMatch ? styleMatch[1] : "";
+    
     if (isListItem) {
       html += `<li>${paragraphHtml || "&nbsp;"}</li>`;
+    } else if (style.toLowerCase().includes("heading1") || style === "Ttulo1") {
+      html += `<h1>${paragraphHtml}</h1>`;
+    } else if (style.toLowerCase().includes("heading2") || style === "Ttulo2") {
+      html += `<h2>${paragraphHtml}</h2>`;
+    } else if (style.toLowerCase().includes("heading3") || style === "Ttulo3") {
+      html += `<h3>${paragraphHtml}</h3>`;
+    } else if (paragraphHtml) {
+      html += `<p>${paragraphHtml}</p>`;
     } else {
-      html += `<p>${paragraphHtml || ""}</p>`;
+      // Empty paragraph - keep as spacing
+      html += `<p><br></p>`;
     }
     
-    pos2 = pEnd + 6;
+    pos = pEnd + 6;
   }
   
-  // Clean up empty paragraphs and wrap lists
-  html = html.replace(/<p><\/p>/g, "<p>&nbsp;</p>");
-  
   // Wrap consecutive li elements in ul
-  html = html.replace(/(<li>.*?<\/li>)+/g, "<ul>$&</ul>");
+  html = html.replace(/(<li>[\s\S]*?<\/li>)+/g, (match) => `<ul>${match}</ul>`);
+  
+  // Remove excessive empty paragraphs
+  html = html.replace(/(<p><br><\/p>){3,}/g, "<p><br></p><p><br></p>");
+  
+  console.log("Final HTML length:", html.length);
+  console.log("First 500 chars:", html.substring(0, 500));
   
   return html || "<p></p>";
 }
@@ -292,7 +204,7 @@ serve(async (req) => {
 
     console.log("Parsing DOCX from URL:", template_url);
     
-    const htmlContent = await parseDocxWithZip(template_url);
+    const htmlContent = await parseDocxFromUrl(template_url);
     
     console.log("Successfully extracted HTML content, length:", htmlContent.length);
 
