@@ -1,11 +1,13 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import Image from '@tiptap/extension-image';
+import Underline from '@tiptap/extension-underline';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Bold, Italic, List, ListOrdered, Undo, Redo, GripVertical } from 'lucide-react';
+import { Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, Undo, Redo, GripVertical, ImageIcon } from 'lucide-react';
 import { PlanVariable } from '@/hooks/usePlans';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 
 interface TemplateEditorProps {
   content: string;
@@ -30,6 +32,7 @@ const formatVariableForInsertion = (variableName: string, fieldType?: string): s
 
 export function TemplateEditor({ content, onChange, variables, readOnly = false }: TemplateEditorProps) {
   const draggedVariableRef = useRef<{ name: string; type?: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
     extensions: [
@@ -37,6 +40,11 @@ export function TemplateEditor({ content, onChange, variables, readOnly = false 
       Placeholder.configure({
         placeholder: 'Escreva o conteúdo do template aqui. Arraste variáveis da lista à direita para posicioná-las no texto...',
       }),
+      Image.configure({
+        inline: true,
+        allowBase64: true,
+      }),
+      Underline,
     ],
     content: content,
     editable: !readOnly,
@@ -74,12 +82,40 @@ export function TemplateEditor({ content, onChange, variables, readOnly = false 
     e.dataTransfer.dropEffect = 'copy';
   };
 
+  const handleImageUpload = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !editor) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      editor.chain().focus().setImage({ src: base64 }).run();
+    };
+    reader.readAsDataURL(file);
+    
+    // Reset input
+    e.target.value = '';
+  }, [editor]);
+
   if (!editor) {
     return null;
   }
 
   return (
     <div className="flex gap-4 h-[500px]">
+      {/* Hidden file input for images */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
       {/* Editor Area */}
       <div className="flex-1 flex flex-col border rounded-lg overflow-hidden">
         {/* Toolbar */}
@@ -107,6 +143,16 @@ export function TemplateEditor({ content, onChange, variables, readOnly = false 
               type="button"
               variant="ghost"
               size="sm"
+              onClick={() => editor.chain().focus().toggleUnderline().run()}
+              className={editor.isActive('underline') ? 'bg-accent' : ''}
+            >
+              <UnderlineIcon className="h-4 w-4" />
+            </Button>
+            <div className="w-px h-6 bg-border mx-1" />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => editor.chain().focus().toggleBulletList().run()}
               className={editor.isActive('bulletList') ? 'bg-accent' : ''}
             >
@@ -120,6 +166,16 @@ export function TemplateEditor({ content, onChange, variables, readOnly = false 
               className={editor.isActive('orderedList') ? 'bg-accent' : ''}
             >
               <ListOrdered className="h-4 w-4" />
+            </Button>
+            <div className="w-px h-6 bg-border mx-1" />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleImageUpload}
+              title="Inserir imagem"
+            >
+              <ImageIcon className="h-4 w-4" />
             </Button>
             <div className="w-px h-6 bg-border mx-1" />
             <Button
@@ -151,14 +207,14 @@ export function TemplateEditor({ content, onChange, variables, readOnly = false 
         >
           <EditorContent
             editor={editor}
-            className="prose prose-sm max-w-none h-full [&_.ProseMirror]:min-h-full [&_.ProseMirror]:outline-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-muted-foreground [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none"
+            className="prose prose-sm max-w-none h-full [&_.ProseMirror]:min-h-full [&_.ProseMirror]:outline-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-muted-foreground [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_img]:max-w-full [&_.ProseMirror_img]:h-auto [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:ml-4 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:ml-4"
           />
         </div>
       </div>
 
       {/* Variables Panel */}
       {!readOnly && variables.length > 0 && (
-        <div className="w-64 border rounded-lg p-4 bg-muted/30">
+        <div className="w-64 border rounded-lg p-4 bg-muted/30 overflow-auto">
           <h4 className="font-medium mb-3 text-sm">Variáveis Disponíveis</h4>
           <p className="text-xs text-muted-foreground mb-3">
             Arraste as variáveis para o editor para posicioná-las no template

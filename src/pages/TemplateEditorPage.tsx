@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate, useBlocker } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export default function TemplateEditorPage() {
   const { planId } = useParams<{ planId: string }>();
@@ -26,14 +36,38 @@ export default function TemplateEditorPage() {
   const { toast } = useToast();
   
   const [content, setContent] = useState('');
+  const [originalContent, setOriginalContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveAsNewDialogOpen, setSaveAsNewDialogOpen] = useState(false);
+  const [saveConfirmDialogOpen, setSaveConfirmDialogOpen] = useState(false);
   const [newPlanName, setNewPlanName] = useState('');
   const [loadingDocx, setLoadingDocx] = useState(false);
   const [docxError, setDocxError] = useState<string | null>(null);
   
   const plan = plans.find((p) => p.id === planId);
   const variables = plan?.plan_variables ?? [];
+
+  // Check if there are unsaved changes
+  const hasUnsavedChanges = content !== originalContent && originalContent !== '';
+
+  // Block navigation when there are unsaved changes
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      hasUnsavedChanges && currentLocation.pathname !== nextLocation.pathname
+  );
+
+  // Handle browser beforeunload event
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   // Load content from template_content or parse from DOCX
   useEffect(() => {
@@ -48,6 +82,7 @@ export default function TemplateEditorPage() {
         
       if (hasValidContent) {
         setContent(plan.template_content);
+        setOriginalContent(plan.template_content);
         return;
       }
       
@@ -68,6 +103,7 @@ export default function TemplateEditorPage() {
           
           if (data?.html && data.html.trim() !== '<p></p>') {
             setContent(data.html);
+            setOriginalContent(data.html);
             // Auto-save the parsed content to template_content
             await updatePlan.mutateAsync({
               id: plan.id,
@@ -88,19 +124,34 @@ export default function TemplateEditorPage() {
     loadContent();
   }, [plan?.id, plan?.template_content, plan?.template_url]);
 
+  const confirmSave = useCallback(() => {
+    setSaveConfirmDialogOpen(true);
+  }, []);
+
   const handleSave = async () => {
-    if (!planId) return;
+    if (!planId || !plan) return;
     
     setSaving(true);
+    setSaveConfirmDialogOpen(false);
+    
     try {
+      // Delete old template file from storage if exists
+      if (plan.template_url) {
+        const urlParts = plan.template_url.split('/templates/');
+        if (urlParts.length > 1) {
+          const filePath = urlParts[1];
+          await supabase.storage.from('templates').remove([filePath]);
+        }
+      }
+
+      // Update plan with new content and clear template_url
       await updatePlan.mutateAsync({
         id: planId,
         template_content: content,
+        template_url: null, // Clear the old template URL
       });
-      toast({
-        title: 'Template salvo',
-        description: 'O conteúdo do template foi atualizado com sucesso.',
-      });
+      
+      setOriginalContent(content);
     } catch (error) {
       toast({
         title: 'Erro ao salvar',
@@ -137,6 +188,7 @@ export default function TemplateEditorPage() {
       
       setSaveAsNewDialogOpen(false);
       setNewPlanName('');
+      setOriginalContent(content); // Reset changes tracking
       navigate(`/settings/plans/${newPlan.id}/template`);
     } catch (error) {
       toast({
@@ -241,13 +293,18 @@ export default function TemplateEditorPage() {
             <p className="text-muted-foreground">
               {plan.name} - Posicione as variáveis no documento
             </p>
+            {hasUnsavedChanges && (
+              <p className="text-sm text-primary mt-1">
+                • Alterações não salvas
+              </p>
+            )}
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setSaveAsNewDialogOpen(true)}>
               <Copy className="h-4 w-4 mr-2" />
               Salvar como Novo
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
+            <Button onClick={confirmSave} disabled={saving}>
               {saving ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
@@ -290,6 +347,45 @@ export default function TemplateEditorPage() {
           </Card>
         )}
       </div>
+
+      {/* Save Confirmation Dialog */}
+      <AlertDialog open={saveConfirmDialogOpen} onOpenChange={setSaveConfirmDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Salvar Template</AlertDialogTitle>
+            <AlertDialogDescription>
+              Ao salvar, o documento original do template será substituído pelo conteúdo atual do editor.
+              Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSave}>
+              Confirmar e Salvar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Unsaved Changes Dialog */}
+      <AlertDialog open={blocker.state === 'blocked'}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Alterações não salvas</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você tem alterações não salvas no template. Deseja sair sem salvar?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => blocker.reset?.()}>
+              Continuar Editando
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => blocker.proceed?.()}>
+              Sair sem Salvar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Save As New Dialog */}
       <Dialog open={saveAsNewDialogOpen} onOpenChange={setSaveAsNewDialogOpen}>
