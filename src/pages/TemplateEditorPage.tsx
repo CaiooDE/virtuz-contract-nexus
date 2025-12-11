@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { TemplateEditor } from '@/components/templates/TemplateEditor';
 import { usePlans } from '@/hooks/usePlans';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Save, Copy } from 'lucide-react';
+import { Loader2, Save, Copy, AlertTriangle } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import {
   Dialog,
   DialogContent,
@@ -28,15 +29,54 @@ export default function TemplateEditorPage() {
   const [saving, setSaving] = useState(false);
   const [saveAsNewDialogOpen, setSaveAsNewDialogOpen] = useState(false);
   const [newPlanName, setNewPlanName] = useState('');
+  const [loadingDocx, setLoadingDocx] = useState(false);
+  const [docxError, setDocxError] = useState<string | null>(null);
   
   const plan = plans.find((p) => p.id === planId);
   const variables = plan?.plan_variables ?? [];
 
+  // Load content from template_content or parse from DOCX
   useEffect(() => {
-    if (plan?.template_content) {
-      setContent(plan.template_content);
-    }
-  }, [plan]);
+    const loadContent = async () => {
+      if (!plan) return;
+      
+      // If we already have template_content, use it
+      if (plan.template_content) {
+        setContent(plan.template_content);
+        return;
+      }
+      
+      // If we have a template_url, parse the DOCX
+      if (plan.template_url) {
+        setLoadingDocx(true);
+        setDocxError(null);
+        
+        try {
+          const { data, error } = await supabase.functions.invoke('parse-docx', {
+            body: { template_url: plan.template_url },
+          });
+          
+          if (error) throw error;
+          
+          if (data?.html) {
+            setContent(data.html);
+            // Auto-save the parsed content to template_content
+            await updatePlan.mutateAsync({
+              id: plan.id,
+              template_content: data.html,
+            });
+          }
+        } catch (error) {
+          console.error('Error parsing DOCX:', error);
+          setDocxError(error instanceof Error ? error.message : 'Erro ao carregar o template');
+        } finally {
+          setLoadingDocx(false);
+        }
+      }
+    };
+    
+    loadContent();
+  }, [plan?.id, plan?.template_content, plan?.template_url]);
 
   const handleSave = async () => {
     if (!planId) return;
@@ -116,6 +156,65 @@ export default function TemplateEditorPage() {
           <Card>
             <CardContent className="p-8 text-center text-muted-foreground">
               Plano não encontrado
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // Show message if no template file is uploaded
+  if (!plan.template_url && !plan.template_content) {
+    return (
+      <AppLayout>
+        <div className="p-6">
+          <Card>
+            <CardContent className="p-8 text-center">
+              <AlertTriangle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h2 className="text-xl font-semibold mb-2">Nenhum template anexado</h2>
+              <p className="text-muted-foreground mb-4">
+                Para editar o conteúdo do template, primeiro faça o upload de um arquivo .docx nas configurações do plano.
+              </p>
+              <Button onClick={() => navigate('/settings')}>
+                Ir para Configurações
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // Show loading state while parsing DOCX
+  if (loadingDocx) {
+    return (
+      <AppLayout>
+        <div className="p-6 flex flex-col items-center justify-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <p className="text-muted-foreground">Carregando conteúdo do template...</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // Show error if DOCX parsing failed
+  if (docxError) {
+    return (
+      <AppLayout>
+        <div className="p-6">
+          <Card className="border-destructive">
+            <CardContent className="p-8 text-center">
+              <AlertTriangle className="h-12 w-12 mx-auto text-destructive mb-4" />
+              <h2 className="text-xl font-semibold mb-2">Erro ao carregar template</h2>
+              <p className="text-muted-foreground mb-4">{docxError}</p>
+              <div className="flex gap-2 justify-center">
+                <Button variant="outline" onClick={() => navigate('/settings')}>
+                  Voltar às Configurações
+                </Button>
+                <Button onClick={() => window.location.reload()}>
+                  Tentar Novamente
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
