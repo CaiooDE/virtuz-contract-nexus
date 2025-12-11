@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Trash2, Upload, GripVertical, X } from 'lucide-react';
+import { Plus, Trash2, Upload, GripVertical, X, Edit2, FileText, ExternalLink } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,32 +21,37 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { usePlans } from '@/hooks/usePlans';
+import { usePlans, PlanVariable } from '@/hooks/usePlans';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { VariableFormDialog } from '@/components/plans/VariableFormDialog';
 
-const AVAILABLE_VARIABLES = [
-  { name: 'client_name', label: 'Nome do Cliente' },
-  { name: 'client_email', label: 'E-mail do Cliente' },
-  { name: 'client_phone', label: 'Telefone do Cliente' },
-  { name: 'contract_value', label: 'Valor do Contrato' },
-  { name: 'start_date', label: 'Data de Início' },
-  { name: 'end_date', label: 'Data de Término' },
-  { name: 'company_name', label: 'Razão Social' },
-  { name: 'cnpj', label: 'CNPJ' },
-  { name: 'address', label: 'Endereço' },
-  { name: 'custom_field', label: 'Campo Personalizado' },
-];
+const FIELD_TYPE_LABELS: Record<string, string> = {
+  text: 'Texto',
+  number: 'Número',
+  date: 'Data',
+  email: 'E-mail',
+  phone: 'Telefone',
+  currency: 'Moeda',
+  textarea: 'Texto Longo',
+  select: 'Seleção',
+};
 
 export default function PlansSettings() {
-  const { plans, isLoading, createPlan, deletePlan, createVariable, deleteVariable } = usePlans();
+  const { plans, isLoading, createPlan, deletePlan, createVariable, updateVariable, deleteVariable, updatePlan, refetch } = usePlans();
   const { toast } = useToast();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newPlan, setNewPlan] = useState({ name: '', base_value: '' });
   const [uploading, setUploading] = useState<string | null>(null);
   const [draggedVariable, setDraggedVariable] = useState<string | null>(null);
+  
+  // Variable dialog state
+  const [variableDialogOpen, setVariableDialogOpen] = useState(false);
+  const [variableDialogMode, setVariableDialogMode] = useState<'create' | 'edit'>('create');
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [editingVariable, setEditingVariable] = useState<PlanVariable | null>(null);
 
   const handleCreatePlan = async () => {
     if (!newPlan.name || !newPlan.base_value) {
@@ -77,6 +82,19 @@ export default function PlansSettings() {
     return `${normalized}${extension ? `.${extension}` : ''}`;
   };
 
+  const getFileNameFromUrl = (url: string | null): string | null => {
+    if (!url) return null;
+    try {
+      const parts = url.split('/');
+      const fileName = parts[parts.length - 1];
+      // Remove timestamp prefix if exists
+      const nameWithoutTimestamp = fileName.replace(/^\d+_/, '');
+      return decodeURIComponent(nameWithoutTimestamp);
+    } catch {
+      return null;
+    }
+  };
+
   const handleFileUpload = async (planId: string, file: File) => {
     if (!file.name.endsWith('.docx')) {
       toast({
@@ -102,14 +120,16 @@ export default function PlansSettings() {
         .from('templates')
         .getPublicUrl(fileName);
 
-      await supabase
-        .from('plans')
-        .update({ template_url: publicUrl })
-        .eq('id', planId);
+      await updatePlan.mutateAsync({
+        id: planId,
+        template_url: publicUrl,
+      });
+
+      await refetch();
 
       toast({
         title: 'Template enviado',
-        description: 'O arquivo foi associado ao plano com sucesso.',
+        description: `Arquivo "${file.name}" foi associado ao plano com sucesso.`,
       });
     } catch (error) {
       toast({
@@ -122,40 +142,50 @@ export default function PlansSettings() {
     }
   };
 
-  const handleDragStart = (variableName: string) => {
-    setDraggedVariable(variableName);
+  const handleDragStart = (planId: string) => {
+    setDraggedVariable(planId);
   };
 
   const handleDragEnd = () => {
     setDraggedVariable(null);
   };
 
-  const handleDrop = async (planId: string) => {
-    if (!draggedVariable) return;
+  const handleOpenCreateVariable = (planId: string) => {
+    setSelectedPlanId(planId);
+    setEditingVariable(null);
+    setVariableDialogMode('create');
+    setVariableDialogOpen(true);
+  };
 
-    const variable = AVAILABLE_VARIABLES.find((v) => v.name === draggedVariable);
-    if (!variable) return;
+  const handleOpenEditVariable = (variable: PlanVariable) => {
+    setSelectedPlanId(variable.plan_id);
+    setEditingVariable(variable);
+    setVariableDialogMode('edit');
+    setVariableDialogOpen(true);
+  };
 
-    // Check if variable already exists for this plan
-    const plan = plans.find((p) => p.id === planId);
-    const exists = plan?.plan_variables?.some((v) => v.variable_name === variable.name);
-
-    if (exists) {
-      toast({
-        title: 'Variável já existe',
-        description: 'Esta variável já foi adicionada a este plano.',
-        variant: 'destructive',
+  const handleVariableSubmit = async (data: {
+    variable_name: string;
+    label: string;
+    field_type: string;
+    required: boolean;
+    options?: string[];
+    description?: string;
+  }) => {
+    if (variableDialogMode === 'create' && selectedPlanId) {
+      await createVariable.mutateAsync({
+        plan_id: selectedPlanId,
+        ...data,
       });
-      return;
+    } else if (variableDialogMode === 'edit' && editingVariable) {
+      await updateVariable.mutateAsync({
+        id: editingVariable.id,
+        ...data,
+      });
     }
-
-    await createVariable.mutateAsync({
-      plan_id: planId,
-      variable_name: variable.name,
-      label: variable.label,
-    });
-
-    setDraggedVariable(null);
+    setVariableDialogOpen(false);
+    setEditingVariable(null);
+    setSelectedPlanId(null);
   };
 
   return (
@@ -218,54 +248,26 @@ export default function PlansSettings() {
           </Dialog>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Variables Palette */}
-          <Card className="lg:col-span-1">
-            <CardHeader>
-              <CardTitle>Variáveis Disponíveis</CardTitle>
-              <CardDescription>
-                Arraste e solte nos planos para adicionar
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {AVAILABLE_VARIABLES.map((variable) => (
-                <div
-                  key={variable.name}
-                  draggable
-                  onDragStart={() => handleDragStart(variable.name)}
-                  onDragEnd={handleDragEnd}
-                  className="flex items-center gap-2 p-2 border rounded-lg cursor-grab active:cursor-grabbing hover:bg-accent transition-colors"
-                >
-                  <GripVertical className="h-4 w-4 text-muted-foreground" />
-                  <code className="text-xs bg-muted px-1 rounded">{`{{${variable.name}}}`}</code>
-                  <span className="text-sm">{variable.label}</span>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Plans List */}
-          <div className="lg:col-span-2 space-y-4">
-            {isLoading ? (
-              <Card>
-                <CardContent className="p-8 text-center">
-                  <Loader2 className="h-8 w-8 animate-spin mx-auto" />
-                </CardContent>
-              </Card>
-            ) : plans.length === 0 ? (
-              <Card>
-                <CardContent className="p-8 text-center text-muted-foreground">
-                  Nenhum plano cadastrado. Crie o primeiro plano.
-                </CardContent>
-              </Card>
-            ) : (
-              plans.map((plan) => (
-                <Card
-                  key={plan.id}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => handleDrop(plan.id)}
-                  className={draggedVariable ? 'ring-2 ring-primary ring-dashed' : ''}
-                >
+        {/* Plans List */}
+        <div className="space-y-4">
+          {isLoading ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+              </CardContent>
+            </Card>
+          ) : plans.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center text-muted-foreground">
+                Nenhum plano cadastrado. Crie o primeiro plano.
+              </CardContent>
+            </Card>
+          ) : (
+            plans.map((plan) => {
+              const templateFileName = getFileNameFromUrl(plan.template_url);
+              
+              return (
+                <Card key={plan.id}>
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div>
@@ -288,68 +290,130 @@ export default function PlansSettings() {
                     {/* Template Upload */}
                     <div>
                       <Label>Template (.docx)</Label>
-                      <div className="flex gap-2 mt-1">
-                        <Input
-                          type="file"
-                          accept=".docx"
-                          className="hidden"
-                          id={`template-${plan.id}`}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleFileUpload(plan.id, file);
-                          }}
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => document.getElementById(`template-${plan.id}`)?.click()}
-                          disabled={uploading === plan.id}
-                        >
-                          {uploading === plan.id ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <Upload className="h-4 w-4 mr-2" />
-                          )}
-                          {plan.template_url ? 'Substituir Template' : 'Enviar Template'}
-                        </Button>
-                        {plan.template_url && (
-                          <Badge variant="secondary" className="h-8 px-2">
-                            Template vinculado
-                          </Badge>
+                      <div className="flex flex-col gap-2 mt-1">
+                        <div className="flex gap-2 items-center">
+                          <Input
+                            type="file"
+                            accept=".docx"
+                            className="hidden"
+                            id={`template-${plan.id}`}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) handleFileUpload(plan.id, file);
+                            }}
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => document.getElementById(`template-${plan.id}`)?.click()}
+                            disabled={uploading === plan.id}
+                          >
+                            {uploading === plan.id ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <Upload className="h-4 w-4 mr-2" />
+                            )}
+                            {plan.template_url ? 'Substituir' : 'Enviar'} Template
+                          </Button>
+                        </div>
+                        {plan.template_url && templateFileName && (
+                          <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
+                            <FileText className="h-4 w-4 text-primary" />
+                            <span className="text-sm flex-1 truncate">{templateFileName}</span>
+                            <a
+                              href={plan.template_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:text-primary/80"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          </div>
                         )}
                       </div>
                     </div>
 
                     {/* Variables */}
                     <div>
-                      <Label>Variáveis do Plano</Label>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex items-center justify-between mb-2">
+                        <Label>Variáveis do Plano</Label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenCreateVariable(plan.id)}
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Nova Variável
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
                         {plan.plan_variables?.length === 0 ? (
                           <p className="text-sm text-muted-foreground">
-                            Arraste variáveis aqui para adicionar
+                            Nenhuma variável cadastrada. Clique em "Nova Variável" para adicionar.
                           </p>
                         ) : (
                           plan.plan_variables?.map((variable) => (
-                            <Badge key={variable.id} variant="outline" className="gap-1">
-                              {`{{${variable.variable_name}}}`}
+                            <div
+                              key={variable.id}
+                              draggable
+                              onDragStart={() => handleDragStart(variable.id)}
+                              onDragEnd={handleDragEnd}
+                              className="flex items-center gap-1 p-2 border rounded-lg bg-card cursor-grab active:cursor-grabbing hover:bg-accent transition-colors"
+                            >
+                              <GripVertical className="h-3 w-3 text-muted-foreground" />
+                              <code className="text-xs bg-muted px-1 rounded">{`{{${variable.variable_name}}}`}</code>
+                              <Badge variant="outline" className="text-xs ml-1">
+                                {FIELD_TYPE_LABELS[variable.field_type] || variable.field_type}
+                              </Badge>
+                              {variable.required && (
+                                <Badge variant="secondary" className="text-xs">
+                                  Obrigatório
+                                </Badge>
+                              )}
+                              <button
+                                onClick={() => handleOpenEditVariable(variable)}
+                                className="ml-1 p-1 hover:bg-muted rounded"
+                              >
+                                <Edit2 className="h-3 w-3 text-muted-foreground" />
+                              </button>
                               <button
                                 onClick={() => deleteVariable.mutate(variable.id)}
-                                className="ml-1 hover:text-destructive"
+                                className="p-1 hover:bg-destructive/10 rounded"
                               >
-                                <X className="h-3 w-3" />
+                                <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                               </button>
-                            </Badge>
+                            </div>
                           ))
                         )}
                       </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Dica: Arraste as variáveis para o documento .docx e use a sintaxe {`{{nome_variavel}}`} no template.
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
-              ))
-            )}
-          </div>
+              );
+            })
+          )}
         </div>
       </div>
+
+      {/* Variable Form Dialog */}
+      <VariableFormDialog
+        open={variableDialogOpen}
+        onOpenChange={setVariableDialogOpen}
+        onSubmit={handleVariableSubmit}
+        initialData={editingVariable ? {
+          variable_name: editingVariable.variable_name,
+          label: editingVariable.label,
+          field_type: editingVariable.field_type,
+          required: editingVariable.required,
+          options: editingVariable.options,
+          description: editingVariable.description,
+        } : undefined}
+        isLoading={createVariable.isPending || updateVariable.isPending}
+        mode={variableDialogMode}
+      />
     </AppLayout>
   );
 }

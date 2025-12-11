@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import ContractsList from "./pages/ContractsList";
 import NewContract from "./pages/NewContract";
 import PlansSettings from "./pages/PlansSettings";
+import WebhookSettings from "./pages/WebhookSettings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/contracts" element={<ProtectedRoute><ContractsList /></ProtectedRoute>} />
             <Route path="/contracts/new" element={<ProtectedRoute><NewContract /></ProtectedRoute>} />
             <Route path="/settings/plans" element={<ProtectedRoute><PlansSettings /></ProtectedRoute>} />
+            <Route path="/settings/webhooks" element={<ProtectedRoute><WebhookSettings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
