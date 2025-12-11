@@ -14,8 +14,22 @@ interface TemplateEditorProps {
   readOnly?: boolean;
 }
 
+// Helper to format currency fields with extenso placeholder
+const formatVariableForInsertion = (variableName: string, fieldType?: string): string => {
+  const isCurrencyField = fieldType === 'currency' || 
+    variableName.toLowerCase().includes('valor') || 
+    variableName.toLowerCase().includes('value') ||
+    variableName.toLowerCase().includes('preco') ||
+    variableName.toLowerCase().includes('price');
+  
+  if (isCurrencyField) {
+    return `<strong>R$ {{${variableName}}} ({{${variableName}_extenso}})</strong>`;
+  }
+  return `<strong>{{${variableName}}}</strong>`;
+};
+
 export function TemplateEditor({ content, onChange, variables, readOnly = false }: TemplateEditorProps) {
-  const draggedVariableRef = useRef<string | null>(null);
+  const draggedVariableRef = useRef<{ name: string; type?: string } | null>(null);
 
   const editor = useEditor({
     extensions: [
@@ -37,8 +51,8 @@ export function TemplateEditor({ content, onChange, variables, readOnly = false 
     }
   }, [content, editor]);
 
-  const handleDragStart = (e: React.DragEvent, variableName: string) => {
-    draggedVariableRef.current = variableName;
+  const handleDragStart = (e: React.DragEvent, variableName: string, fieldType?: string) => {
+    draggedVariableRef.current = { name: variableName, type: fieldType };
     e.dataTransfer.setData('text/plain', `{{${variableName}}}`);
     e.dataTransfer.effectAllowed = 'copy';
   };
@@ -46,8 +60,11 @@ export function TemplateEditor({ content, onChange, variables, readOnly = false 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (editor && draggedVariableRef.current) {
-      const variableText = `{{${draggedVariableRef.current}}}`;
-      editor.commands.insertContent(variableText);
+      const variableHtml = formatVariableForInsertion(
+        draggedVariableRef.current.name, 
+        draggedVariableRef.current.type
+      );
+      editor.commands.insertContent(variableHtml, { parseOptions: { preserveWhitespace: false } });
       draggedVariableRef.current = null;
     }
   };
@@ -147,27 +164,38 @@ export function TemplateEditor({ content, onChange, variables, readOnly = false 
             Arraste as variáveis para o editor para posicioná-las no template
           </p>
           <div className="space-y-2">
-            {variables.map((variable) => (
-              <div
-                key={variable.id}
-                draggable
-                onDragStart={(e) => handleDragStart(e, variable.variable_name)}
-                className="flex items-center gap-2 p-2 border rounded bg-background cursor-grab active:cursor-grabbing hover:bg-accent transition-colors"
-              >
-                <GripVertical className="h-3 w-3 text-muted-foreground" />
-                <div className="flex-1 min-w-0">
-                  <code className="text-xs bg-muted px-1 rounded block truncate">
-                    {`{{${variable.variable_name}}}`}
-                  </code>
-                  <span className="text-xs text-muted-foreground">{variable.label}</span>
+            {variables.map((variable) => {
+              const isCurrency = variable.field_type === 'currency' || 
+                variable.variable_name.toLowerCase().includes('valor') || 
+                variable.variable_name.toLowerCase().includes('value');
+              
+              return (
+                <div
+                  key={variable.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, variable.variable_name, variable.field_type)}
+                  className="flex items-center gap-2 p-2 border rounded bg-background cursor-grab active:cursor-grabbing hover:bg-accent transition-colors"
+                >
+                  <GripVertical className="h-3 w-3 text-muted-foreground" />
+                  <div className="flex-1 min-w-0">
+                    <code className="text-xs bg-muted px-1 rounded block truncate font-bold">
+                      {`{{${variable.variable_name}}}`}
+                    </code>
+                    <span className="text-xs text-muted-foreground">{variable.label}</span>
+                    {isCurrency && (
+                      <span className="text-[10px] text-primary block">
+                        R$ XX.XXX,XX (por extenso)
+                      </span>
+                    )}
+                  </div>
+                  {variable.required && (
+                    <Badge variant="secondary" className="text-[10px] px-1">
+                      *
+                    </Badge>
+                  )}
                 </div>
-                {variable.required && (
-                  <Badge variant="secondary" className="text-[10px] px-1">
-                    *
-                  </Badge>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
