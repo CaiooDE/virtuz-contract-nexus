@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 export default function ContractsList() {
+  const navigate = useNavigate();
   const { contracts, isLoading } = useContracts();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -117,7 +118,11 @@ export default function ContractsList() {
                 </TableRow>
               ) : (
                 filteredContracts.map((contract) => (
-                  <TableRow key={contract.id}>
+                  <TableRow 
+                    key={contract.id} 
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => navigate(`/contracts/${contract.id}`)}
+                  >
                     <TableCell className="font-medium">{contract.client_name}</TableCell>
                     <TableCell>{contract.plans?.name ?? '-'}</TableCell>
                     <TableCell>

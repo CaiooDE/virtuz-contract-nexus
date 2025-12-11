@@ -21,6 +21,8 @@ export interface Contract {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  client_token: string | null;
+  client_filled_at: string | null;
   plans?: {
     id: string;
     name: string;
