@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { addDays, addMonths, startOfMonth, endOfMonth, format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 export interface DashboardStats {
   totalContracts: number;
@@ -90,7 +91,44 @@ export function useDashboardStats() {
         });
 
         months.push({
-          month: format(monthDate, 'MMM'),
+          month: format(monthDate, 'MMM', { locale: ptBR }),
+          value: totalValue,
+        });
+      }
+
+      return months;
+    },
+  });
+
+  // Future months projection
+  const futureChartDataQuery = useQuery({
+    queryKey: ['dashboard-future-chart'],
+    queryFn: async () => {
+      const { data: contracts } = await supabase
+        .from('contracts')
+        .select('monthly_value, start_date, end_date')
+        .eq('status', 'active');
+
+      // Generate next 12 months data
+      const months: MonthlyChartData[] = [];
+      for (let i = 0; i < 12; i++) {
+        const monthDate = addMonths(today, i);
+        const monthStart = startOfMonth(monthDate);
+        const monthEnd = endOfMonth(monthDate);
+
+        // Sum monthly values for contracts that will be active in this month
+        let totalValue = 0;
+        contracts?.forEach((contract) => {
+          const contractStart = new Date(contract.start_date);
+          const contractEnd = new Date(contract.end_date);
+
+          if (contractStart <= monthEnd && contractEnd >= monthStart) {
+            totalValue += Number(contract.monthly_value) || 0;
+          }
+        });
+
+        months.push({
+          month: format(monthDate, 'MMM/yy', { locale: ptBR }),
           value: totalValue,
         });
       }
@@ -118,7 +156,8 @@ export function useDashboardStats() {
   return {
     stats: statsQuery.data,
     chartData: chartDataQuery.data ?? [],
+    futureChartData: futureChartDataQuery.data ?? [],
     expiringContracts: expiringContractsQuery.data ?? [],
-    isLoading: statsQuery.isLoading || chartDataQuery.isLoading || expiringContractsQuery.isLoading,
+    isLoading: statsQuery.isLoading || chartDataQuery.isLoading || futureChartDataQuery.isLoading || expiringContractsQuery.isLoading,
   };
 }

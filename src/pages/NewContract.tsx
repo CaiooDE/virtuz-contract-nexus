@@ -43,6 +43,7 @@ export default function NewContract() {
     total_value: '',
     custom_data: {} as Record<string, string>,
     status: 'draft' as ContractStatus,
+    contract_category: 'client',
   });
 
   const selectedPlan = plans.find((p) => p.id === formData.plan_id);
@@ -210,7 +211,9 @@ export default function NewContract() {
   return (
     <AppLayout>
       <div className="p-6 max-w-3xl">
-        <div className="mb-6">
+        {/* Header with accent */}
+        <div className="relative mb-6">
+          <div className="absolute -left-6 top-0 w-1 h-full gradient-primary rounded-r" />
           <h1 className="text-3xl font-bold">Novo Contrato</h1>
           <p className="text-muted-foreground">
             Preencha os dados para criar um novo contrato
@@ -219,7 +222,7 @@ export default function NewContract() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Existing Contract Toggle */}
-          <Card>
+          <Card className="border-l-4 border-l-muted-foreground">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Tipo de Contrato</CardTitle>
             </CardHeader>
@@ -289,7 +292,7 @@ export default function NewContract() {
             </Card>
           )}
 
-          <Card>
+          <Card className="border-l-4 border-l-primary">
             <CardHeader>
               <CardTitle>Dados do Cliente</CardTitle>
             </CardHeader>
@@ -323,11 +326,30 @@ export default function NewContract() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="border-l-4 border-l-primary">
             <CardHeader>
               <CardTitle>Detalhes do Contrato</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <Label htmlFor="contract_category">Categoria do Contrato *</Label>
+                <Select
+                  value={formData.contract_category}
+                  onValueChange={(value) => setFormData({ ...formData, contract_category: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="client">Cliente</SelectItem>
+                    <SelectItem value="service_provider_pj">Prestador de Serviço (PJ)</SelectItem>
+                    <SelectItem value="service_provider_pf">Prestador de Serviço (PF)</SelectItem>
+                    <SelectItem value="vendor_service">Serviços Contratados</SelectItem>
+                    <SelectItem value="partnership">Parceria</SelectItem>
+                    <SelectItem value="other">Outro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="md:col-span-2">
                 <Label htmlFor="plan_id">Plano</Label>
                 <Select
@@ -366,7 +388,7 @@ export default function NewContract() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[1, 3, 6, 12, 18, 24, 36].map((months) => (
+                    {Array.from({ length: 24 }, (_, i) => i + 1).map((months) => (
                       <SelectItem key={months} value={months.toString()}>
                         {months} {months === 1 ? 'mês' : 'meses'}
                       </SelectItem>
@@ -412,7 +434,7 @@ export default function NewContract() {
           </Card>
 
           {planVariables.length > 0 && (
-            <Card>
+            <Card className="border-l-4 border-l-accent-foreground">
               <CardHeader>
                 <CardTitle>Campos Personalizados ({selectedPlan?.name})</CardTitle>
                 <CardDescription>
@@ -444,7 +466,7 @@ export default function NewContract() {
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={createContract.isPending}>
+            <Button type="submit" disabled={createContract.isPending} className="gradient-primary">
               {createContract.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               {isExistingContract ? 'Cadastrar Contrato em Vigor' : 'Criar Contrato'}
             </Button>

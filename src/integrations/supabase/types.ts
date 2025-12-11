@@ -21,6 +21,7 @@ export type Database = {
           client_name: string
           client_phone: string | null
           client_token: string | null
+          contract_category: string | null
           created_at: string
           created_by: string | null
           custom_data: Json | null
@@ -40,6 +41,7 @@ export type Database = {
           client_name: string
           client_phone?: string | null
           client_token?: string | null
+          contract_category?: string | null
           created_at?: string
           created_by?: string | null
           custom_data?: Json | null
@@ -59,6 +61,7 @@ export type Database = {
           client_name?: string
           client_phone?: string | null
           client_token?: string | null
+          contract_category?: string | null
           created_at?: string
           created_by?: string | null
           custom_data?: Json | null

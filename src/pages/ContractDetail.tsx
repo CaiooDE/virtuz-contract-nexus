@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useContracts } from '@/hooks/useContracts';
 import { usePlans } from '@/hooks/usePlans';
 import { ContractStatusBadge } from '@/components/contracts/ContractStatusBadge';
-import { Loader2, Download, Eye, Share2, Send, Edit, Copy, CheckCircle } from 'lucide-react';
+import { Loader2, Download, Eye, Share2, Send, Edit, Copy, CheckCircle, FileText, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
@@ -36,6 +36,15 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelado' },
 ];
 
+const CONTRACT_CATEGORY_LABELS: Record<string, string> = {
+  client: 'Cliente',
+  service_provider_pj: 'Prestador de Serviço (PJ)',
+  service_provider_pf: 'Prestador de Serviço (PF)',
+  vendor_service: 'Serviços Contratados',
+  partnership: 'Parceria',
+  other: 'Outro',
+};
+
 export default function ContractDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -44,6 +53,7 @@ export default function ContractDetail() {
   const { toast } = useToast();
   
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   
   const contract = contracts.find((c) => c.id === id);
@@ -53,7 +63,7 @@ export default function ContractDetail() {
     return (
       <AppLayout>
         <div className="p-6 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin" />
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       </AppLayout>
     );
@@ -74,6 +84,7 @@ export default function ContractDetail() {
   }
 
   const clientFormUrl = `${window.location.origin}/client-form/${contract.client_token}`;
+  const contractCategory = (contract as any).contract_category || 'client';
 
   const handleCopyLink = async () => {
     await navigator.clipboard.writeText(clientFormUrl);
@@ -102,17 +113,32 @@ export default function ContractDetail() {
 
   const customData = contract.custom_data as Record<string, string> | null;
 
+  // Check if the document URL is a PDF for preview
+  const isPDF = contract.generated_document_url?.toLowerCase().endsWith('.pdf');
+  const isOfficeDoc = contract.generated_document_url?.toLowerCase().match(/\.(docx?|xlsx?|pptx?)$/);
+  
+  // Use Google Docs Viewer for non-PDF documents
+  const getPreviewUrl = (url: string) => {
+    if (isPDF) {
+      return url;
+    }
+    // Use Google Docs Viewer for Office documents
+    return `https://docs.google.com/gview?url=${encodeURIComponent(url)}&embedded=true`;
+  };
+
   return (
     <AppLayout>
       <div className="p-6 space-y-6 max-w-4xl">
+        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
+          <div className="relative">
+            <div className="absolute -left-6 top-0 w-1 h-full gradient-primary rounded-r" />
             <div className="flex items-center gap-3">
               <h1 className="text-3xl font-bold">{contract.client_name}</h1>
               <ContractStatusBadge status={contract.status} />
             </div>
             <p className="text-muted-foreground">
-              {plan?.name || 'Sem plano'} • Criado em {format(new Date(contract.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              {plan?.name || 'Sem plano'} • {CONTRACT_CATEGORY_LABELS[contractCategory]} • Criado em {format(new Date(contract.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
             </p>
           </div>
           <div className="flex gap-2">
@@ -121,14 +147,20 @@ export default function ContractDetail() {
               Editar
             </Button>
             {contract.generated_document_url && (
-              <Button variant="outline" asChild>
-                <a href={contract.generated_document_url} target="_blank" rel="noopener noreferrer">
-                  <Download className="h-4 w-4 mr-2" />
-                  Baixar
-                </a>
-              </Button>
+              <>
+                <Button variant="outline" onClick={() => setPreviewDialogOpen(true)}>
+                  <Eye className="h-4 w-4 mr-2" />
+                  Visualizar
+                </Button>
+                <Button variant="outline" asChild>
+                  <a href={contract.generated_document_url} download>
+                    <Download className="h-4 w-4 mr-2" />
+                    Baixar
+                  </a>
+                </Button>
+              </>
             )}
-            <Button onClick={handleSendToClient}>
+            <Button onClick={handleSendToClient} className="gradient-primary">
               <Send className="h-4 w-4 mr-2" />
               Enviar para Cliente
             </Button>
@@ -137,9 +169,12 @@ export default function ContractDetail() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Contract Info */}
-          <Card>
+          <Card className="border-t-4 border-t-primary">
             <CardHeader>
-              <CardTitle>Informações do Contrato</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Informações do Contrato
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -157,16 +192,20 @@ export default function ContractDetail() {
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Valor Mensal</Label>
-                  <p className="font-medium">
+                  <p className="font-medium text-primary">
                     R$ {Number(contract.monthly_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Valor Total</Label>
-                  <p className="font-medium">
+                  <p className="font-medium text-primary">
                     R$ {Number(contract.total_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </p>
                 </div>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Categoria</Label>
+                <p className="font-medium">{CONTRACT_CATEGORY_LABELS[contractCategory]}</p>
               </div>
               <div>
                 <Label className="text-muted-foreground">Status</Label>
@@ -187,7 +226,7 @@ export default function ContractDetail() {
           </Card>
 
           {/* Client Info */}
-          <Card>
+          <Card className="border-t-4 border-t-accent-foreground">
             <CardHeader>
               <CardTitle>Dados do Cliente</CardTitle>
             </CardHeader>
@@ -221,11 +260,52 @@ export default function ContractDetail() {
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {Object.entries(customData).map(([key, value]) => (
-                  <div key={key}>
-                    <Label className="text-muted-foreground">{key}</Label>
+                  <div key={key} className="p-3 bg-accent/30 rounded-lg">
+                    <Label className="text-muted-foreground text-xs">{key}</Label>
                     <p className="font-medium">{value || '-'}</p>
                   </div>
                 ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Document Preview Card */}
+        {contract.generated_document_url && (
+          <Card className="border-t-4 border-t-primary">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Documento do Contrato
+              </CardTitle>
+              <CardDescription>
+                Visualize, baixe ou compartilhe o documento
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* Embedded Preview */}
+              <div className="border rounded-lg overflow-hidden mb-4 bg-muted">
+                <iframe
+                  src={getPreviewUrl(contract.generated_document_url)}
+                  className="w-full h-[500px]"
+                  title="Visualização do Contrato"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setPreviewDialogOpen(true)}>
+                  <Eye className="h-4 w-4 mr-2" />
+                  Tela Cheia
+                </Button>
+                <Button variant="outline" asChild>
+                  <a href={contract.generated_document_url} download>
+                    <Download className="h-4 w-4 mr-2" />
+                    Baixar
+                  </a>
+                </Button>
+                <Button variant="outline" onClick={() => setShareDialogOpen(true)}>
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Compartilhar
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -242,51 +322,43 @@ export default function ContractDetail() {
           <CardContent>
             <div className="flex gap-2">
               <Input value={clientFormUrl} readOnly className="bg-muted" />
-              <Button variant="outline" onClick={handleCopyLink}>
+              <Button variant="outline" onClick={handleCopyLink} className="shrink-0">
                 {linkCopied ? (
-                  <CheckCircle className="h-4 w-4" />
+                  <CheckCircle className="h-4 w-4 text-green-500" />
                 ) : (
                   <Copy className="h-4 w-4" />
                 )}
               </Button>
             </div>
             {contract.client_filled_at && (
-              <p className="text-sm text-muted-foreground mt-2">
+              <p className="text-sm text-muted-foreground mt-2 flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-500" />
                 Preenchido pelo cliente em {format(new Date(contract.client_filled_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
               </p>
             )}
           </CardContent>
         </Card>
-
-        {/* Document Preview */}
-        {contract.generated_document_url && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Documento</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                <Button variant="outline" asChild>
-                  <a href={contract.generated_document_url} target="_blank" rel="noopener noreferrer">
-                    <Eye className="h-4 w-4 mr-2" />
-                    Visualizar
-                  </a>
-                </Button>
-                <Button variant="outline" asChild>
-                  <a href={contract.generated_document_url} download>
-                    <Download className="h-4 w-4 mr-2" />
-                    Baixar
-                  </a>
-                </Button>
-                <Button variant="outline" onClick={() => setShareDialogOpen(true)}>
-                  <Share2 className="h-4 w-4 mr-2" />
-                  Compartilhar
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
+
+      {/* Full Screen Preview Dialog */}
+      <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
+        <DialogContent className="max-w-6xl h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Visualização do Contrato - {contract.client_name}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 h-full min-h-0">
+            {contract.generated_document_url && (
+              <iframe
+                src={getPreviewUrl(contract.generated_document_url)}
+                className="w-full h-[calc(90vh-120px)] rounded-lg border"
+                title="Visualização do Contrato"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Share Dialog */}
       <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
@@ -303,7 +375,7 @@ export default function ContractDetail() {
               <div className="flex gap-2 mt-1">
                 <Input value={clientFormUrl} readOnly className="bg-muted" />
                 <Button variant="outline" onClick={handleCopyLink}>
-                  {linkCopied ? <CheckCircle className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {linkCopied ? <CheckCircle className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
                 </Button>
               </div>
             </div>
