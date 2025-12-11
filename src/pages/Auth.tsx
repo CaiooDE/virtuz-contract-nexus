@@ -54,10 +54,20 @@ export default function Auth() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden">
+      {/* Decorative elements */}
+      <div className="absolute top-0 left-0 w-full h-2 gradient-primary" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 rounded-full bg-primary/5 -translate-x-1/2 translate-y-1/2" />
+      <div className="absolute top-20 left-10 w-32 h-32 rounded-full bg-primary/10" />
+      
+      <Card className="w-full max-w-md relative border-t-4 border-t-primary">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">VirtuzMídia</CardTitle>
+          <div className="flex justify-center mb-4">
+            <div className="h-16 w-16 rounded-xl gradient-primary flex items-center justify-center shadow-lg">
+              <span className="text-primary-foreground font-bold text-2xl">V</span>
+            </div>
+          </div>
+          <CardTitle className="text-2xl font-bold">V-Sign</CardTitle>
           <CardDescription>
             Sistema de Gestão de Contratos
           </CardDescription>
@@ -67,7 +77,7 @@ export default function Auth() {
             Acesso restrito a colaboradores VirtuzMídia
           </p>
           <Button
-            className="w-full"
+            className="w-full gradient-primary hover:opacity-90"
             size="lg"
             onClick={handleGoogleSignIn}
           >
@@ -94,7 +104,7 @@ export default function Auth() {
           <Button
             className="w-full"
             size="lg"
-            variant="secondary"
+            variant="outline"
             onClick={handleTestAccountSignIn}
           >
             Usar conta de teste temporária

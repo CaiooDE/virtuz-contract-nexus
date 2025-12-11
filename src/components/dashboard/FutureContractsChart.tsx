@@ -1,28 +1,34 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 
 interface ChartData {
   month: string;
   value: number;
 }
 
-interface ContractsChartProps {
+interface FutureContractsChartProps {
   data: ChartData[];
 }
 
-export function ContractsChart({ data }: ContractsChartProps) {
+export function FutureContractsChart({ data }: FutureContractsChartProps) {
   return (
     <Card className="border-t-4 border-t-primary">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-primary" />
-          Valor Mensal dos Contratos Ativos
+          Projeção de Receita Futura
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+            <AreaChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <defs>
+                <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="hsl(21, 78%, 46%)" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="hsl(21, 78%, 46%)" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
               <XAxis 
                 dataKey="month" 
@@ -32,10 +38,10 @@ export function ContractsChart({ data }: ContractsChartProps) {
               <YAxis 
                 className="text-muted-foreground"
                 tick={{ fontSize: 12 }}
-                tickFormatter={(value) => `R$ ${value.toLocaleString('pt-BR')}`}
+                tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
               />
               <Tooltip 
-                formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR')}`, 'Valor']}
+                formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Valor']}
                 contentStyle={{
                   backgroundColor: 'hsl(var(--popover))',
                   border: '1px solid hsl(var(--border))',
@@ -43,12 +49,15 @@ export function ContractsChart({ data }: ContractsChartProps) {
                 }}
                 labelStyle={{ color: 'hsl(var(--foreground))' }}
               />
-              <Bar 
+              <Area 
+                type="monotone"
                 dataKey="value" 
-                fill="hsl(21, 78%, 46%)" 
-                radius={[4, 4, 0, 0]}
+                stroke="hsl(21, 78%, 46%)"
+                strokeWidth={2}
+                fillOpacity={1}
+                fill="url(#colorValue)"
               />
-            </BarChart>
+            </AreaChart>
           </ResponsiveContainer>
         </div>
       </CardContent>

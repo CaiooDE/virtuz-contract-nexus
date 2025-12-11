@@ -1,18 +1,21 @@
-import { FileText, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
+import { FileText, CheckCircle, AlertTriangle, XCircle, TrendingUp } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { KPICard } from '@/components/dashboard/KPICard';
 import { ContractsChart } from '@/components/dashboard/ContractsChart';
+import { FutureContractsChart } from '@/components/dashboard/FutureContractsChart';
 import { ExpiringContractsTable } from '@/components/dashboard/ExpiringContractsTable';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Dashboard() {
-  const { stats, chartData, expiringContracts, isLoading } = useDashboardStats();
+  const { stats, chartData, futureChartData, expiringContracts, isLoading } = useDashboardStats();
 
   return (
     <AppLayout>
       <div className="p-6 space-y-6">
-        <div>
+        {/* Header with accent bar */}
+        <div className="relative">
+          <div className="absolute -left-6 top-0 w-1 h-full gradient-primary rounded-r" />
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">
             Visão geral dos contratos
@@ -58,7 +61,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Chart and Table */}
+        {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {isLoading ? (
             <>
@@ -68,8 +71,17 @@ export default function Dashboard() {
           ) : (
             <>
               <ContractsChart data={chartData} />
-              <ExpiringContractsTable contracts={expiringContracts} />
+              <FutureContractsChart data={futureChartData} />
             </>
+          )}
+        </div>
+
+        {/* Expiring Contracts Table */}
+        <div>
+          {isLoading ? (
+            <Skeleton className="h-[400px]" />
+          ) : (
+            <ExpiringContractsTable contracts={expiringContracts} />
           )}
         </div>
       </div>

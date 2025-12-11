@@ -74,15 +74,25 @@ export function AppSidebar() {
         collapsed ? 'justify-center' : 'justify-between'
       )}>
         {!collapsed && (
-          <span className="font-semibold text-lg text-sidebar-foreground">
-            VirtuzMídia
-          </span>
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg gradient-primary flex items-center justify-center">
+              <span className="text-sidebar-primary-foreground font-bold text-sm">V</span>
+            </div>
+            <span className="font-semibold text-lg text-sidebar-foreground">
+              V-Sign
+            </span>
+          </div>
+        )}
+        {collapsed && (
+          <div className="h-8 w-8 rounded-lg gradient-primary flex items-center justify-center">
+            <span className="text-sidebar-primary-foreground font-bold text-sm">V</span>
+          </div>
         )}
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setCollapsed(!collapsed)}
-          className="h-8 w-8"
+          className={cn("h-8 w-8 text-sidebar-foreground hover:text-sidebar-primary", collapsed && "absolute -right-3 top-4 bg-sidebar-background border border-sidebar-border rounded-full")}
         >
           {collapsed ? (
             <ChevronRight className="h-4 w-4" />
