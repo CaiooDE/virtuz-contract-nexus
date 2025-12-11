@@ -17,8 +17,10 @@ export type Database = {
       contracts: {
         Row: {
           client_email: string | null
+          client_filled_at: string | null
           client_name: string
           client_phone: string | null
+          client_token: string | null
           created_at: string
           created_by: string | null
           custom_data: Json | null
@@ -34,8 +36,10 @@ export type Database = {
         }
         Insert: {
           client_email?: string | null
+          client_filled_at?: string | null
           client_name: string
           client_phone?: string | null
+          client_token?: string | null
           created_at?: string
           created_by?: string | null
           custom_data?: Json | null
@@ -51,8 +55,10 @@ export type Database = {
         }
         Update: {
           client_email?: string | null
+          client_filled_at?: string | null
           client_name?: string
           client_phone?: string | null
+          client_token?: string | null
           created_at?: string
           created_by?: string | null
           custom_data?: Json | null
@@ -126,6 +132,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          template_content: string | null
           template_url: string | null
           updated_at: string
         }
@@ -134,6 +141,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          template_content?: string | null
           template_url?: string | null
           updated_at?: string
         }
@@ -142,6 +150,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          template_content?: string | null
           template_url?: string | null
           updated_at?: string
         }

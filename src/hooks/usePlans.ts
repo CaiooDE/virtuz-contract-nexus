@@ -19,6 +19,7 @@ export interface Plan {
   name: string;
   base_value: number;
   template_url: string | null;
+  template_content: string | null;
   created_at: string;
   updated_at: string;
   plan_variables?: PlanVariable[];
@@ -28,6 +29,7 @@ export interface CreatePlanData {
   name: string;
   base_value: number;
   template_url?: string;
+  template_content?: string;
 }
 
 export interface CreateVariableData {

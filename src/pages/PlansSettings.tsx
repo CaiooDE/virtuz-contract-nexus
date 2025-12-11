@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Plus, Trash2, Upload, GripVertical, X, Edit2, FileText, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Trash2, Upload, GripVertical, X, Edit2, FileText, ExternalLink, FileEdit } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,6 +42,7 @@ const FIELD_TYPE_LABELS: Record<string, string> = {
 export default function PlansSettings() {
   const { plans, isLoading, createPlan, deletePlan, createVariable, updateVariable, deleteVariable, updatePlan, refetch } = usePlans();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newPlan, setNewPlan] = useState({ name: '', base_value: '' });
@@ -314,6 +316,14 @@ export default function PlansSettings() {
                               <Upload className="h-4 w-4 mr-2" />
                             )}
                             {plan.template_url ? 'Substituir' : 'Enviar'} Template
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => navigate(`/settings/plans/${plan.id}/template`)}
+                          >
+                            <FileEdit className="h-4 w-4 mr-2" />
+                            Editar Conteúdo
                           </Button>
                         </div>
                         {plan.template_url && templateFileName && (
