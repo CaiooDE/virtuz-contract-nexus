@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useBlocker } from 'react-router-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,6 +40,8 @@ export default function TemplateEditorPage() {
   const [saving, setSaving] = useState(false);
   const [saveAsNewDialogOpen, setSaveAsNewDialogOpen] = useState(false);
   const [saveConfirmDialogOpen, setSaveConfirmDialogOpen] = useState(false);
+  const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
   const [newPlanName, setNewPlanName] = useState('');
   const [loadingDocx, setLoadingDocx] = useState(false);
   const [docxError, setDocxError] = useState<string | null>(null);
@@ -49,17 +51,13 @@ export default function TemplateEditorPage() {
 
   // Check if there are unsaved changes
   const hasUnsavedChanges = content !== originalContent && originalContent !== '';
-
-  // Block navigation when there are unsaved changes
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      hasUnsavedChanges && currentLocation.pathname !== nextLocation.pathname
-  );
+  const hasUnsavedChangesRef = useRef(hasUnsavedChanges);
+  hasUnsavedChangesRef.current = hasUnsavedChanges;
 
   // Handle browser beforeunload event
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges) {
+      if (hasUnsavedChangesRef.current) {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -67,7 +65,30 @@ export default function TemplateEditorPage() {
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [hasUnsavedChanges]);
+  }, []);
+
+  // Safe navigation function that checks for unsaved changes
+  const safeNavigate = useCallback((path: string) => {
+    if (hasUnsavedChangesRef.current) {
+      setPendingNavigation(path);
+      setUnsavedChangesDialogOpen(true);
+    } else {
+      navigate(path);
+    }
+  }, [navigate]);
+
+  const handleConfirmLeave = useCallback(() => {
+    setUnsavedChangesDialogOpen(false);
+    if (pendingNavigation) {
+      navigate(pendingNavigation);
+      setPendingNavigation(null);
+    }
+  }, [navigate, pendingNavigation]);
+
+  const handleCancelLeave = useCallback(() => {
+    setUnsavedChangesDialogOpen(false);
+    setPendingNavigation(null);
+  }, []);
 
   // Load content from template_content or parse from DOCX
   useEffect(() => {
@@ -338,7 +359,7 @@ export default function TemplateEditorPage() {
               <p>Este plano não possui variáveis cadastradas.</p>
               <Button
                 variant="link"
-                onClick={() => navigate('/settings')}
+                onClick={() => safeNavigate('/settings')}
                 className="mt-2"
               >
                 Adicionar variáveis nas configurações
@@ -368,7 +389,7 @@ export default function TemplateEditorPage() {
       </AlertDialog>
 
       {/* Unsaved Changes Dialog */}
-      <AlertDialog open={blocker.state === 'blocked'}>
+      <AlertDialog open={unsavedChangesDialogOpen} onOpenChange={setUnsavedChangesDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Alterações não salvas</AlertDialogTitle>
@@ -377,10 +398,10 @@ export default function TemplateEditorPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => blocker.reset?.()}>
+            <AlertDialogCancel onClick={handleCancelLeave}>
               Continuar Editando
             </AlertDialogCancel>
-            <AlertDialogAction onClick={() => blocker.proceed?.()}>
+            <AlertDialogAction onClick={handleConfirmLeave}>
               Sair sem Salvar
             </AlertDialogAction>
           </AlertDialogFooter>
