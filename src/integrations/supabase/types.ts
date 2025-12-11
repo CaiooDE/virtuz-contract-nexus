@@ -79,27 +79,33 @@ export type Database = {
       plan_variables: {
         Row: {
           created_at: string
+          description: string | null
           field_type: string
           id: string
           label: string
+          options: string[] | null
           plan_id: string
           required: boolean
           variable_name: string
         }
         Insert: {
           created_at?: string
+          description?: string | null
           field_type?: string
           id?: string
           label: string
+          options?: string[] | null
           plan_id: string
           required?: boolean
           variable_name: string
         }
         Update: {
           created_at?: string
+          description?: string | null
           field_type?: string
           id?: string
           label?: string
+          options?: string[] | null
           plan_id?: string
           required?: boolean
           variable_name?: string
@@ -171,6 +177,39 @@ export type Database = {
           id?: string
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      webhook_endpoints: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          secret_key: string | null
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          secret_key?: string | null
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          secret_key?: string | null
+          updated_at?: string
+          url?: string
         }
         Relationships: []
       }

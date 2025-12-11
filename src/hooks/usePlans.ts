@@ -9,6 +9,8 @@ export interface PlanVariable {
   label: string;
   field_type: string;
   required: boolean;
+  options: string[] | null;
+  description: string | null;
   created_at: string;
 }
 
@@ -34,6 +36,18 @@ export interface CreateVariableData {
   label: string;
   field_type?: string;
   required?: boolean;
+  options?: string[];
+  description?: string;
+}
+
+export interface UpdateVariableData {
+  id: string;
+  variable_name?: string;
+  label?: string;
+  field_type?: string;
+  required?: boolean;
+  options?: string[];
+  description?: string;
 }
 
 export function usePlans() {
@@ -137,7 +151,15 @@ export function usePlans() {
     mutationFn: async (data: CreateVariableData) => {
       const { data: result, error } = await supabase
         .from('plan_variables')
-        .insert(data)
+        .insert({
+          plan_id: data.plan_id,
+          variable_name: data.variable_name,
+          label: data.label,
+          field_type: data.field_type || 'text',
+          required: data.required || false,
+          options: data.options || null,
+          description: data.description || null,
+        })
         .select()
         .single();
 
@@ -154,6 +176,34 @@ export function usePlans() {
     onError: (error) => {
       toast({
         title: 'Erro ao criar variável',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const updateVariable = useMutation({
+    mutationFn: async ({ id, ...data }: UpdateVariableData) => {
+      const { data: result, error } = await supabase
+        .from('plan_variables')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['plans'] });
+      toast({
+        title: 'Variável atualizada',
+        description: 'A variável foi atualizada com sucesso.',
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Erro ao atualizar variável',
         description: error.message,
         variant: 'destructive',
       });
@@ -189,10 +239,12 @@ export function usePlans() {
     plans: plansQuery.data ?? [],
     isLoading: plansQuery.isLoading,
     error: plansQuery.error,
+    refetch: plansQuery.refetch,
     createPlan,
     updatePlan,
     deletePlan,
     createVariable,
+    updateVariable,
     deleteVariable,
   };
 }

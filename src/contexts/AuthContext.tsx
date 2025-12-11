@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw signUpResult.error;
     }
 
-    if (!signUpResult.session) {
+    if (!signUpResult.data.session) {
       const retrySignIn = await supabase.auth.signInWithPassword({
         email: TEST_ACCOUNT_EMAIL,
         password: TEST_ACCOUNT_PASSWORD,

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useEffect } from 'react';
 
 export type ContractStatus = 'draft' | 'sent_to_client' | 'awaiting_signature' | 'active' | 'expired' | 'cancelled';
 
@@ -36,11 +37,38 @@ export interface CreateContractData {
   monthly_value?: number;
   total_value: number;
   custom_data?: Record<string, unknown>;
+  status?: ContractStatus;
+  generated_document_url?: string;
 }
 
 export function useContracts() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Setup realtime subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('contracts-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'contracts',
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['contracts'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-chart'] });
+          queryClient.invalidateQueries({ queryKey: ['expiring-contracts'] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   const contractsQuery = useQuery({
     queryKey: ['contracts'],
@@ -72,7 +100,8 @@ export function useContracts() {
           total_value: contractData.total_value,
           custom_data: contractData.custom_data as unknown as Record<string, never>,
           created_by: user?.id,
-          status: 'draft' as const,
+          status: contractData.status || 'draft',
+          generated_document_url: contractData.generated_document_url,
         })
         .select()
         .single();
@@ -82,6 +111,9 @@ export function useContracts() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-chart'] });
+      queryClient.invalidateQueries({ queryKey: ['expiring-contracts'] });
       toast({
         title: 'Contrato criado',
         description: 'O contrato foi criado com sucesso.',
@@ -97,10 +129,10 @@ export function useContracts() {
   });
 
   const updateContract = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status?: ContractStatus }) => {
+    mutationFn: async ({ id, ...updateData }: { id: string; status?: ContractStatus; generated_document_url?: string }) => {
       const { data: result, error } = await supabase
         .from('contracts')
-        .update({ status })
+        .update(updateData)
         .eq('id', id)
         .select()
         .single();
@@ -110,6 +142,9 @@ export function useContracts() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-chart'] });
+      queryClient.invalidateQueries({ queryKey: ['expiring-contracts'] });
       toast({
         title: 'Contrato atualizado',
         description: 'O contrato foi atualizado com sucesso.',
@@ -135,6 +170,7 @@ export function useContracts() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       toast({
         title: 'Contrato excluído',
         description: 'O contrato foi excluído com sucesso.',

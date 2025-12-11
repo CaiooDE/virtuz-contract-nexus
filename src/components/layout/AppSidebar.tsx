@@ -7,7 +7,8 @@ import {
   Settings, 
   ChevronLeft,
   ChevronRight,
-  LogOut
+  LogOut,
+  Webhook
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,7 @@ export function AppSidebar() {
     { to: '/contracts', icon: FileText, label: 'Contratos' },
     { to: '/contracts/new', icon: PlusCircle, label: 'Novo Contrato' },
     { to: '/settings/plans', icon: Settings, label: 'Configurações' },
+    { to: '/settings/webhooks', icon: Webhook, label: 'Integrações' },
   ];
 
   const initials = user?.user_metadata?.full_name
