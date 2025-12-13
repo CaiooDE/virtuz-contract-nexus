@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -5,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useContracts } from '@/hooks/useContracts';
 import { usePlans } from '@/hooks/usePlans';
 import { ContractStatusBadge } from '@/components/contracts/ContractStatusBadge';
-import { Loader2, Edit, FileText } from 'lucide-react';
+import { Loader2, Edit, FileText, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Label } from '@/components/ui/label';
@@ -16,6 +17,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 const STATUS_OPTIONS = [
   { value: 'draft', label: 'Rascunho' },
@@ -38,7 +50,8 @@ const CONTRACT_CATEGORY_LABELS: Record<string, string> = {
 export default function ContractDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { contracts, isLoading, updateContract } = useContracts();
+  const { contracts, isLoading, updateContract, deleteContract } = useContracts();
+  const [isDeleting, setIsDeleting] = useState(false);
   const { plans } = usePlans();
   const contract = contracts.find((c) => c.id === id);
   const plan = plans.find((p) => p.id === contract?.plan_id);
@@ -74,6 +87,16 @@ export default function ContractDetail() {
       id: contract.id,
       status: newStatus as typeof contract.status,
     });
+  };
+
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteContract.mutateAsync(contract.id);
+      navigate('/contracts');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const customData = contract.custom_data as Record<string, string> | null;
@@ -117,10 +140,39 @@ export default function ContractDetail() {
               {plan?.name || 'Sem plano'} • {CONTRACT_CATEGORY_LABELS[contractCategory]} • Criado em {format(new Date(contract.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
             </p>
           </div>
-          <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)}>
-            <Edit className="h-4 w-4 mr-2" />
-            Editar
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)}>
+              <Edit className="h-4 w-4 mr-2" />
+              Editar
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Excluir
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Excluir contrato?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta ação não pode ser desfeita. O contrato de <strong>{contract.client_name}</strong> será permanentemente excluído do sistema.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {isDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Confirmar Exclusão
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
