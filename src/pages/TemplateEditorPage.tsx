@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { TemplateEditor } from '@/components/templates/TemplateEditor';
 import { usePlans } from '@/hooks/usePlans';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Save, Copy, AlertTriangle } from 'lucide-react';
+import { Loader2, Save, Copy, AlertTriangle, Edit } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import {
   Dialog,
@@ -31,9 +31,13 @@ import {
 
 export default function TemplateEditorPage() {
   const { planId } = useParams<{ planId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { plans, isLoading, updatePlan, createPlan } = usePlans();
   const { toast } = useToast();
+  
+  // Check if we're in view mode
+  const isViewMode = searchParams.get('mode') === 'view';
   
   const [content, setContent] = useState('');
   const [originalContent, setOriginalContent] = useState('');
@@ -310,29 +314,40 @@ export default function TemplateEditorPage() {
       <div className="p-6 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">Editor de Template</h1>
+            <h1 className="text-3xl font-bold">
+              {isViewMode ? 'Visualização do Template' : 'Editor de Template'}
+            </h1>
             <p className="text-muted-foreground">
-              {plan.name} - Posicione as variáveis no documento
+              {plan.name} {isViewMode ? '- Modo somente leitura' : '- Posicione as variáveis no documento'}
             </p>
-            {hasUnsavedChanges && (
+            {!isViewMode && hasUnsavedChanges && (
               <p className="text-sm text-primary mt-1">
                 • Alterações não salvas
               </p>
             )}
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setSaveAsNewDialogOpen(true)}>
-              <Copy className="h-4 w-4 mr-2" />
-              Salvar como Novo
-            </Button>
-            <Button onClick={confirmSave} disabled={saving}>
-              {saving ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4 mr-2" />
-              )}
-              Salvar Template
-            </Button>
+            {isViewMode ? (
+              <Button onClick={() => setSearchParams({})}>
+                <Edit className="h-4 w-4 mr-2" />
+                Editar Template
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setSaveAsNewDialogOpen(true)}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Salvar como Novo
+                </Button>
+                <Button onClick={confirmSave} disabled={saving}>
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  Salvar Template
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
@@ -340,15 +355,18 @@ export default function TemplateEditorPage() {
           <CardHeader>
             <CardTitle>Conteúdo do Template</CardTitle>
             <CardDescription>
-              Escreva o texto do contrato e arraste as variáveis da lista à direita para posicioná-las no documento.
-              Use a sintaxe {`{{nome_variavel}}`} para inserir variáveis.
+              {isViewMode 
+                ? 'Visualização do conteúdo do template. Clique em "Editar Template" para fazer alterações.'
+                : `Escreva o texto do contrato e arraste as variáveis da lista à direita para posicioná-las no documento. Use a sintaxe {{nome_variavel}} para inserir variáveis.`
+              }
             </CardDescription>
           </CardHeader>
           <CardContent>
             <TemplateEditor
               content={content}
-              onChange={setContent}
-              variables={variables}
+              onChange={isViewMode ? () => {} : setContent}
+              variables={isViewMode ? [] : variables}
+              readOnly={isViewMode}
             />
           </CardContent>
         </Card>

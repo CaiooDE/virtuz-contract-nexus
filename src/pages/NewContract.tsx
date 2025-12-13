@@ -18,8 +18,14 @@ import { useContracts, ContractStatus } from '@/hooks/useContracts';
 import { usePlans } from '@/hooks/usePlans';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Upload, FileText, X } from 'lucide-react';
+import { Loader2, Upload, FileText, X, Copy, CheckCircle, Eye, ArrowRight, Share2 } from 'lucide-react';
 import { addMonths, format } from 'date-fns';
+
+type CreatedContract = {
+  id: string;
+  client_token: string;
+  client_name: string;
+};
 
 export default function NewContract() {
   const navigate = useNavigate();
@@ -30,6 +36,8 @@ export default function NewContract() {
   const [isExistingContract, setIsExistingContract] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [attachedFile, setAttachedFile] = useState<{ name: string; url: string } | null>(null);
+  const [createdContract, setCreatedContract] = useState<CreatedContract | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const [formData, setFormData] = useState({
     client_name: '',
@@ -139,7 +147,7 @@ export default function NewContract() {
       return;
     }
 
-    await createContract.mutateAsync({
+    const result = await createContract.mutateAsync({
       client_name: formData.client_name,
       client_email: formData.client_email || undefined,
       client_phone: formData.client_phone || undefined,
@@ -153,7 +161,24 @@ export default function NewContract() {
       generated_document_url: attachedFile?.url,
     });
 
-    navigate('/contracts');
+    // Show success state with link instead of navigating
+    setCreatedContract({
+      id: result.id,
+      client_token: result.client_token!,
+      client_name: result.client_name,
+    });
+  };
+
+  const handleCopyLink = async () => {
+    if (!createdContract) return;
+    const clientFormUrl = `${window.location.origin}/client-form/${createdContract.client_token}`;
+    await navigator.clipboard.writeText(clientFormUrl);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+    toast({
+      title: 'Link copiado!',
+      description: 'O link foi copiado para a área de transferência.',
+    });
   };
 
   const handleCustomDataChange = (variableName: string, value: string) => {
@@ -207,6 +232,136 @@ export default function NewContract() {
         return <Input type="text" {...commonProps} />;
     }
   };
+
+  // Generate filled contract preview HTML
+  const getFilledTemplateContent = () => {
+    if (!selectedPlan?.template_content) return null;
+    
+    let filledContent = selectedPlan.template_content;
+    
+    // Replace variables with actual values
+    Object.entries(formData.custom_data).forEach(([key, value]) => {
+      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+      filledContent = filledContent.replace(regex, value || `{{${key}}}`);
+    });
+    
+    // Also replace common contract variables
+    filledContent = filledContent.replace(/\{\{client_name\}\}/g, formData.client_name || '{{client_name}}');
+    filledContent = filledContent.replace(/\{\{start_date\}\}/g, formData.start_date ? format(new Date(formData.start_date), 'dd/MM/yyyy') : '{{start_date}}');
+    filledContent = filledContent.replace(/\{\{end_date\}\}/g, formData.end_date ? format(new Date(formData.end_date), 'dd/MM/yyyy') : '{{end_date}}');
+    filledContent = filledContent.replace(/\{\{monthly_value\}\}/g, formData.monthly_value ? `R$ ${parseFloat(formData.monthly_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '{{monthly_value}}');
+    filledContent = filledContent.replace(/\{\{total_value\}\}/g, formData.total_value ? `R$ ${parseFloat(formData.total_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '{{total_value}}');
+    
+    return filledContent;
+  };
+
+  // Show success screen after contract creation
+  if (createdContract) {
+    const clientFormUrl = `${window.location.origin}/client-form/${createdContract.client_token}`;
+    const filledContent = getFilledTemplateContent();
+    
+    return (
+      <AppLayout>
+        <div className="p-6 max-w-4xl space-y-6">
+          <div className="relative">
+            <div className="absolute -left-6 top-0 w-1 h-full bg-green-500 rounded-r" />
+            <div className="flex items-center gap-3">
+              <CheckCircle className="h-8 w-8 text-green-500" />
+              <div>
+                <h1 className="text-3xl font-bold">Contrato Criado com Sucesso!</h1>
+                <p className="text-muted-foreground">
+                  {createdContract.client_name}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Client Link Card */}
+          <Card className="border-t-4 border-t-primary">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Share2 className="h-5 w-5 text-primary" />
+                Link para o Cliente
+              </CardTitle>
+              <CardDescription>
+                Envie este link para o cliente preencher ou visualizar o contrato
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex gap-2">
+                <Input value={clientFormUrl} readOnly className="bg-muted font-mono text-sm" />
+                <Button variant="outline" onClick={handleCopyLink} className="shrink-0">
+                  {linkCopied ? (
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Contract Preview */}
+          {filledContent && (
+            <Card className="border-t-4 border-t-accent-foreground">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Eye className="h-5 w-5 text-primary" />
+                  Preview do Contrato Preenchido
+                </CardTitle>
+                <CardDescription>
+                  Visualização do contrato com as variáveis substituídas pelos dados informados
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div 
+                  className="border rounded-lg p-6 bg-card max-h-[500px] overflow-auto prose prose-sm dark:prose-invert max-w-none"
+                  dangerouslySetInnerHTML={{ __html: filledContent }}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex gap-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreatedContract(null);
+                setFormData({
+                  client_name: '',
+                  client_email: '',
+                  client_phone: '',
+                  plan_id: '',
+                  start_date: '',
+                  duration_months: '12',
+                  end_date: '',
+                  monthly_value: '',
+                  total_value: '',
+                  custom_data: {},
+                  status: 'draft',
+                  contract_category: 'client',
+                });
+              }}
+            >
+              Criar Outro Contrato
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => navigate(`/contracts/${createdContract.id}`)}
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              Ver Detalhes
+            </Button>
+            <Button onClick={() => navigate('/contracts')} className="gradient-primary">
+              <ArrowRight className="h-4 w-4 mr-2" />
+              Ir para Lista de Contratos
+            </Button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
