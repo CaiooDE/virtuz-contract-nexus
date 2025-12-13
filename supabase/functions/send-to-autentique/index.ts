@@ -102,8 +102,7 @@ ${documentContent}
         signers: [{
           email: signerEmail,
           name: signerName,
-          action: "SIGN",
-          positions: []
+          action: "SIGN"
         }],
         file: null
       }
