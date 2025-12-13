@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -6,18 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useContracts } from '@/hooks/useContracts';
 import { usePlans } from '@/hooks/usePlans';
 import { ContractStatusBadge } from '@/components/contracts/ContractStatusBadge';
-import { Loader2, Download, Eye, Share2, Send, Edit, Copy, CheckCircle, FileText, X } from 'lucide-react';
+import { Loader2, Edit, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useToast } from '@/hooks/use-toast';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -50,12 +40,6 @@ export default function ContractDetail() {
   const navigate = useNavigate();
   const { contracts, isLoading, updateContract } = useContracts();
   const { plans } = usePlans();
-  const { toast } = useToast();
-  
-  const [shareDialogOpen, setShareDialogOpen] = useState(false);
-  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
-  
   const contract = contracts.find((c) => c.id === id);
   const plan = plans.find((p) => p.id === contract?.plan_id);
 
@@ -83,26 +67,7 @@ export default function ContractDetail() {
     );
   }
 
-  const clientFormUrl = `${window.location.origin}/client-form/${contract.client_token}`;
   const contractCategory = (contract as any).contract_category || 'client';
-
-  const handleCopyLink = async () => {
-    await navigator.clipboard.writeText(clientFormUrl);
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2000);
-    toast({
-      title: 'Link copiado!',
-      description: 'O link foi copiado para a área de transferência.',
-    });
-  };
-
-  const handleSendToClient = async () => {
-    await updateContract.mutateAsync({
-      id: contract.id,
-      status: 'sent_to_client',
-    });
-    setShareDialogOpen(true);
-  };
 
   const handleStatusChange = async (newStatus: string) => {
     await updateContract.mutateAsync({
@@ -113,17 +78,28 @@ export default function ContractDetail() {
 
   const customData = contract.custom_data as Record<string, string> | null;
 
-  // Check if the document URL is a PDF for preview
-  const isPDF = contract.generated_document_url?.toLowerCase().endsWith('.pdf');
-  const isOfficeDoc = contract.generated_document_url?.toLowerCase().match(/\.(docx?|xlsx?|pptx?)$/);
-  
-  // Use Google Docs Viewer for non-PDF documents
-  const getPreviewUrl = (url: string) => {
-    if (isPDF) {
-      return url;
+  // Generate filled template content
+  const getFilledTemplateContent = () => {
+    if (!plan?.template_content) return '';
+    
+    let filledContent = plan.template_content;
+    
+    // Replace custom variables
+    if (customData) {
+      Object.entries(customData).forEach(([key, value]) => {
+        const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+        filledContent = filledContent.replace(regex, value || `{{${key}}}`);
+      });
     }
-    // Use Google Docs Viewer for Office documents
-    return `https://docs.google.com/gview?url=${encodeURIComponent(url)}&embedded=true`;
+    
+    // Replace common contract variables
+    filledContent = filledContent.replace(/\{\{client_name\}\}/g, contract.client_name || '{{client_name}}');
+    filledContent = filledContent.replace(/\{\{start_date\}\}/g, contract.start_date ? format(new Date(contract.start_date), 'dd/MM/yyyy') : '{{start_date}}');
+    filledContent = filledContent.replace(/\{\{end_date\}\}/g, contract.end_date ? format(new Date(contract.end_date), 'dd/MM/yyyy') : '{{end_date}}');
+    filledContent = filledContent.replace(/\{\{monthly_value\}\}/g, contract.monthly_value ? `R$ ${Number(contract.monthly_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '{{monthly_value}}');
+    filledContent = filledContent.replace(/\{\{total_value\}\}/g, contract.total_value ? `R$ ${Number(contract.total_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '{{total_value}}');
+    
+    return filledContent;
   };
 
   return (
@@ -141,30 +117,10 @@ export default function ContractDetail() {
               {plan?.name || 'Sem plano'} • {CONTRACT_CATEGORY_LABELS[contractCategory]} • Criado em {format(new Date(contract.created_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)}>
-              <Edit className="h-4 w-4 mr-2" />
-              Editar
-            </Button>
-            {contract.generated_document_url && (
-              <>
-                <Button variant="outline" onClick={() => setPreviewDialogOpen(true)}>
-                  <Eye className="h-4 w-4 mr-2" />
-                  Visualizar
-                </Button>
-                <Button variant="outline" asChild>
-                  <a href={contract.generated_document_url} download>
-                    <Download className="h-4 w-4 mr-2" />
-                    Baixar
-                  </a>
-                </Button>
-              </>
-            )}
-            <Button onClick={handleSendToClient} className="gradient-primary">
-              <Send className="h-4 w-4 mr-2" />
-              Enviar para Cliente
-            </Button>
-          </div>
+          <Button variant="outline" onClick={() => navigate(`/contracts/${contract.id}/edit`)}>
+            <Edit className="h-4 w-4 mr-2" />
+            Editar
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -270,8 +226,8 @@ export default function ContractDetail() {
           </Card>
         )}
 
-        {/* Document Preview Card */}
-        {contract.generated_document_url && (
+
+        {plan?.template_content && (
           <Card className="border-t-4 border-t-primary">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -279,109 +235,18 @@ export default function ContractDetail() {
                 Documento do Contrato
               </CardTitle>
               <CardDescription>
-                Visualize, baixe ou compartilhe o documento
+                Contrato preenchido com as variáveis substituídas
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Embedded Preview */}
-              <div className="border rounded-lg overflow-hidden mb-4 bg-muted">
-                <iframe
-                  src={getPreviewUrl(contract.generated_document_url)}
-                  className="w-full h-[500px]"
-                  title="Visualização do Contrato"
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setPreviewDialogOpen(true)}>
-                  <Eye className="h-4 w-4 mr-2" />
-                  Tela Cheia
-                </Button>
-                <Button variant="outline" asChild>
-                  <a href={contract.generated_document_url} download>
-                    <Download className="h-4 w-4 mr-2" />
-                    Baixar
-                  </a>
-                </Button>
-                <Button variant="outline" onClick={() => setShareDialogOpen(true)}>
-                  <Share2 className="h-4 w-4 mr-2" />
-                  Compartilhar
-                </Button>
-              </div>
+              <div 
+                className="border rounded-lg p-6 bg-card prose prose-sm dark:prose-invert max-w-none max-h-[600px] overflow-auto"
+                dangerouslySetInnerHTML={{ __html: getFilledTemplateContent() }}
+              />
             </CardContent>
           </Card>
         )}
-
-        {/* Share Link */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Link para Preenchimento pelo Cliente</CardTitle>
-            <CardDescription>
-              Envie este link para que o cliente preencha os dados do contrato
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-2">
-              <Input value={clientFormUrl} readOnly className="bg-muted" />
-              <Button variant="outline" onClick={handleCopyLink} className="shrink-0">
-                {linkCopied ? (
-                  <CheckCircle className="h-4 w-4 text-green-500" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-            {contract.client_filled_at && (
-              <p className="text-sm text-muted-foreground mt-2 flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-green-500" />
-                Preenchido pelo cliente em {format(new Date(contract.client_filled_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-              </p>
-            )}
-          </CardContent>
-        </Card>
       </div>
-
-      {/* Full Screen Preview Dialog */}
-      <Dialog open={previewDialogOpen} onOpenChange={setPreviewDialogOpen}>
-        <DialogContent className="max-w-6xl h-[90vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>Visualização do Contrato - {contract.client_name}</span>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 h-full min-h-0">
-            {contract.generated_document_url && (
-              <iframe
-                src={getPreviewUrl(contract.generated_document_url)}
-                className="w-full h-[calc(90vh-120px)] rounded-lg border"
-                title="Visualização do Contrato"
-              />
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Share Dialog */}
-      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Compartilhar com o Cliente</DialogTitle>
-            <DialogDescription>
-              Copie o link abaixo e envie para o cliente preencher ou visualizar o contrato
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label>Link para preenchimento</Label>
-              <div className="flex gap-2 mt-1">
-                <Input value={clientFormUrl} readOnly className="bg-muted" />
-                <Button variant="outline" onClick={handleCopyLink}>
-                  {linkCopied ? <CheckCircle className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </AppLayout>
   );
 }
