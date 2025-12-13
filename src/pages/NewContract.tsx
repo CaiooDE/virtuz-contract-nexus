@@ -56,6 +56,18 @@ export default function NewContract() {
     contract_category: 'client',
   });
 
+  // Generate client form link based on category and plan selection
+  const [previewToken, setPreviewToken] = useState<string | null>(null);
+  
+  // Generate a unique token when category is selected (for link preview)
+  useEffect(() => {
+    if (formData.contract_category) {
+      // Generate a random UUID-like token for preview purposes
+      const token = crypto.randomUUID();
+      setPreviewToken(token);
+    }
+  }, [formData.contract_category, formData.plan_id]);
+
   const selectedPlan = plans.find((p) => p.id === formData.plan_id);
   const planVariables = selectedPlan?.plan_variables ?? [];
 
@@ -188,6 +200,7 @@ export default function NewContract() {
             signerName: formData.client_name,
             signerEmail: formData.client_email,
             documentContent: filledContent,
+            contractCategory: formData.contract_category,
           },
         });
 
@@ -476,6 +489,33 @@ export default function NewContract() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Quick Client Link Preview - Show when category is selected and not existing contract */}
+          {!isExistingContract && formData.contract_category && (
+            <Card className="border-l-4 border-l-green-500 bg-green-500/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Share2 className="h-5 w-5 text-green-500" />
+                  Link para Coleta de Dados
+                </CardTitle>
+                <CardDescription>
+                  Após criar o contrato, este link será gerado para o cliente preencher os dados
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex gap-2">
+                  <Input 
+                    value={`${window.location.origin}/client-form/[token-gerado-após-criar]`} 
+                    readOnly 
+                    className="bg-muted font-mono text-sm text-muted-foreground" 
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  O link final será disponibilizado assim que o contrato for criado. Você também pode enviar o contrato para preenchimento por e-mail.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           {/* File Upload for Existing Contracts */}
           {isExistingContract && (
