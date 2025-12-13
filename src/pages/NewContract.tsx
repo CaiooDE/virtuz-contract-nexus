@@ -18,13 +18,14 @@ import { useContracts, ContractStatus } from '@/hooks/useContracts';
 import { usePlans } from '@/hooks/usePlans';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Upload, FileText, X, Copy, CheckCircle, Eye, ArrowRight, Share2 } from 'lucide-react';
+import { Loader2, Upload, FileText, X, Copy, CheckCircle, Eye, ArrowRight, Share2, ExternalLink, FileSignature } from 'lucide-react';
 import { addMonths, format } from 'date-fns';
 
 type CreatedContract = {
   id: string;
   client_token: string;
   client_name: string;
+  autentique_signature_link?: string;
 };
 
 export default function NewContract() {
@@ -38,6 +39,7 @@ export default function NewContract() {
   const [attachedFile, setAttachedFile] = useState<{ name: string; url: string } | null>(null);
   const [createdContract, setCreatedContract] = useState<CreatedContract | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [sendingToAutentique, setSendingToAutentique] = useState(false);
 
   const [formData, setFormData] = useState({
     client_name: '',
@@ -147,6 +149,16 @@ export default function NewContract() {
       return;
     }
 
+    // Validate email is required for Autentique
+    if (!isExistingContract && !formData.client_email) {
+      toast({
+        title: 'E-mail obrigatório',
+        description: 'O e-mail do cliente é necessário para enviar o contrato para assinatura.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const result = await createContract.mutateAsync({
       client_name: formData.client_name,
       client_email: formData.client_email || undefined,
@@ -161,11 +173,51 @@ export default function NewContract() {
       generated_document_url: attachedFile?.url,
     });
 
-    // Show success state with link instead of navigating
+    let autentiqueLink: string | undefined;
+
+    // Send to Autentique if not an existing contract and has template
+    if (!isExistingContract && selectedPlan?.template_content && formData.client_email) {
+      setSendingToAutentique(true);
+      try {
+        const filledContent = getFilledTemplateContent();
+        
+        const response = await supabase.functions.invoke('send-to-autentique', {
+          body: {
+            contractId: result.id,
+            documentName: `Contrato - ${formData.client_name}`,
+            signerName: formData.client_name,
+            signerEmail: formData.client_email,
+            documentContent: filledContent,
+          },
+        });
+
+        if (response.error) {
+          console.error('Error sending to Autentique:', response.error);
+          toast({
+            title: 'Aviso',
+            description: 'Contrato criado, mas houve um erro ao enviar para o Autentique. Verifique a configuração da API.',
+            variant: 'destructive',
+          });
+        } else if (response.data?.success) {
+          autentiqueLink = response.data.signatureLink;
+          toast({
+            title: 'Enviado para Autentique!',
+            description: 'O contrato foi enviado para assinatura digital.',
+          });
+        }
+      } catch (error) {
+        console.error('Error calling Autentique:', error);
+      } finally {
+        setSendingToAutentique(false);
+      }
+    }
+
+    // Show success state with link
     setCreatedContract({
       id: result.id,
       client_token: result.client_token!,
       client_name: result.client_name,
+      autentique_signature_link: autentiqueLink,
     });
   };
 
@@ -275,6 +327,36 @@ export default function NewContract() {
               </div>
             </div>
           </div>
+
+          {/* Autentique Signature Link Card */}
+          {createdContract.autentique_signature_link && (
+            <Card className="border-t-4 border-t-green-500">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileSignature className="h-5 w-5 text-green-500" />
+                  Assinatura Digital - Autentique
+                </CardTitle>
+                <CardDescription>
+                  O contrato foi enviado para o Autentique. O cliente receberá um e-mail para assinatura.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2">
+                  <Input value={createdContract.autentique_signature_link} readOnly className="bg-muted font-mono text-sm" />
+                  <Button 
+                    variant="outline" 
+                    onClick={() => window.open(createdContract.autentique_signature_link, '_blank')}
+                    className="shrink-0"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Um e-mail foi enviado para <strong>{formData.client_email}</strong> com o link para assinatura.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Client Link Card */}
           <Card className="border-t-4 border-t-primary">
@@ -621,9 +703,15 @@ export default function NewContract() {
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={createContract.isPending} className="gradient-primary">
-              {createContract.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {isExistingContract ? 'Cadastrar Contrato em Vigor' : 'Criar Contrato'}
+            <Button type="submit" disabled={createContract.isPending || sendingToAutentique} className="gradient-primary">
+              {(createContract.isPending || sendingToAutentique) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {sendingToAutentique 
+                ? 'Enviando para Autentique...' 
+                : createContract.isPending 
+                  ? 'Criando...' 
+                  : isExistingContract 
+                    ? 'Cadastrar Contrato em Vigor' 
+                    : 'Criar e Enviar para Assinatura'}
             </Button>
           </div>
         </form>
