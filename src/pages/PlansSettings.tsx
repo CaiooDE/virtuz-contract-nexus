@@ -293,7 +293,7 @@ export default function PlansSettings() {
                     <div>
                       <Label>Template (.docx)</Label>
                       <div className="flex flex-col gap-2 mt-1">
-                        <div className="flex gap-2 items-center">
+                        <div className="flex gap-2 items-center flex-wrap">
                           <Input
                             type="file"
                             accept=".docx"
@@ -315,16 +315,28 @@ export default function PlansSettings() {
                             ) : (
                               <Upload className="h-4 w-4 mr-2" />
                             )}
-                            {plan.template_url ? 'Substituir' : 'Enviar'} Template
+                            {plan.template_url || plan.template_content ? 'Substituir' : 'Enviar'} Template
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => navigate(`/settings/plans/${plan.id}/template`)}
-                          >
-                            <FileEdit className="h-4 w-4 mr-2" />
-                            Editar Conteúdo
-                          </Button>
+                          {(plan.template_url || plan.template_content) && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => navigate(`/settings/plans/${plan.id}/template?mode=view`)}
+                              >
+                                <FileText className="h-4 w-4 mr-2" />
+                                Visualizar
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => navigate(`/settings/plans/${plan.id}/template`)}
+                              >
+                                <FileEdit className="h-4 w-4 mr-2" />
+                                Editar
+                              </Button>
+                            </>
+                          )}
                         </div>
                         {plan.template_url && templateFileName && (
                           <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
