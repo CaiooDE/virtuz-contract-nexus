@@ -16,6 +16,8 @@ export type Database = {
     Tables: {
       contracts: {
         Row: {
+          autentique_document_id: string | null
+          autentique_signature_link: string | null
           client_email: string | null
           client_filled_at: string | null
           client_name: string
@@ -30,12 +32,15 @@ export type Database = {
           id: string
           monthly_value: number | null
           plan_id: string | null
+          sent_to_autentique_at: string | null
           start_date: string
           status: Database["public"]["Enums"]["contract_status"]
           total_value: number
           updated_at: string
         }
         Insert: {
+          autentique_document_id?: string | null
+          autentique_signature_link?: string | null
           client_email?: string | null
           client_filled_at?: string | null
           client_name: string
@@ -50,12 +55,15 @@ export type Database = {
           id?: string
           monthly_value?: number | null
           plan_id?: string | null
+          sent_to_autentique_at?: string | null
           start_date: string
           status?: Database["public"]["Enums"]["contract_status"]
           total_value: number
           updated_at?: string
         }
         Update: {
+          autentique_document_id?: string | null
+          autentique_signature_link?: string | null
           client_email?: string | null
           client_filled_at?: string | null
           client_name?: string
@@ -70,6 +78,7 @@ export type Database = {
           id?: string
           monthly_value?: number | null
           plan_id?: string | null
+          sent_to_autentique_at?: string | null
           start_date?: string
           status?: Database["public"]["Enums"]["contract_status"]
           total_value?: number

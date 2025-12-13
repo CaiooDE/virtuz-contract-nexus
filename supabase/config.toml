@@ -2,3 +2,6 @@ project_id = "tdmvukaqoexseetucmvt"
 
 [functions.parse-docx]
 verify_jwt = false
+
+[functions.send-to-autentique]
+verify_jwt = false
