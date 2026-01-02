@@ -7,6 +7,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithPassword: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   isAuthorizedDomain: boolean;
 }
@@ -58,6 +59,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInWithPassword = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      throw error;
+    }
+  };
+
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
@@ -71,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       loading,
       signInWithGoogle,
+      signInWithPassword,
       signOut,
       isAuthorizedDomain
     }}>
