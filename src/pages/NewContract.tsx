@@ -19,6 +19,7 @@ import { usePlans } from '@/hooks/usePlans';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Upload, FileText, X, Copy, CheckCircle, Eye, ArrowRight, Share2, ExternalLink, FileSignature } from 'lucide-react';
+import { SignaturePositioner } from '@/components/contracts/SignaturePositioner';
 import { addMonths, format } from 'date-fns';
 import { numberToCurrencyWords } from '@/lib/numberToWords';
 
@@ -57,10 +58,10 @@ export default function NewContract() {
     contract_category: 'client',
   });
 
-  // Signature positions for Autentique
+  // Signature positions for Autentique (now using numbers for drag-and-drop)
   const [signaturePositions, setSignaturePositions] = useState({
-    company: { x: '50', y: '90' },
-    client: { x: '50', y: '95' }
+    company: { x: 25, y: 90 },
+    client: { x: 75, y: 90 }
   });
 
   // Generate client form link based on category and plan selection
@@ -210,12 +211,12 @@ export default function NewContract() {
             contractCategory: formData.contract_category,
             signaturePositions: {
               company: {
-                x: parseFloat(signaturePositions.company.x),
-                y: parseFloat(signaturePositions.company.y)
+                x: signaturePositions.company.x,
+                y: signaturePositions.company.y
               },
               client: {
-                x: parseFloat(signaturePositions.client.x),
-                y: parseFloat(signaturePositions.client.y)
+                x: signaturePositions.client.x,
+                y: signaturePositions.client.y
               }
             }
           },
@@ -783,95 +784,13 @@ export default function NewContract() {
             </Card>
           )}
 
-          {/* Signature Positioning - Only show when not existing contract */}
+          {/* Signature Positioning - Drag and Drop */}
           {!isExistingContract && selectedPlan?.template_content && (
-            <Card className="border-l-4 border-l-green-500">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileSignature className="h-5 w-5 text-green-500" />
-                  Posicionamento das Assinaturas
-                </CardTitle>
-                <CardDescription>
-                  Defina onde cada assinatura aparecerá no documento (posição em % da página, 0-100)
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Company Signature */}
-                  <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                    <Label className="text-base font-medium">Assinatura da Empresa (Virtuz Mídia)</Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label htmlFor="company_x" className="text-xs text-muted-foreground">Posição Horizontal (X %)</Label>
-                        <Input
-                          id="company_x"
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={signaturePositions.company.x}
-                          onChange={(e) => setSignaturePositions(prev => ({
-                            ...prev,
-                            company: { ...prev.company, x: e.target.value }
-                          }))}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="company_y" className="text-xs text-muted-foreground">Posição Vertical (Y %)</Label>
-                        <Input
-                          id="company_y"
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={signaturePositions.company.y}
-                          onChange={(e) => setSignaturePositions(prev => ({
-                            ...prev,
-                            company: { ...prev.company, y: e.target.value }
-                          }))}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Client Signature */}
-                  <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                    <Label className="text-base font-medium">Assinatura do Cliente</Label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label htmlFor="client_x" className="text-xs text-muted-foreground">Posição Horizontal (X %)</Label>
-                        <Input
-                          id="client_x"
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={signaturePositions.client.x}
-                          onChange={(e) => setSignaturePositions(prev => ({
-                            ...prev,
-                            client: { ...prev.client, x: e.target.value }
-                          }))}
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="client_y" className="text-xs text-muted-foreground">Posição Vertical (Y %)</Label>
-                        <Input
-                          id="client_y"
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={signaturePositions.client.y}
-                          onChange={(e) => setSignaturePositions(prev => ({
-                            ...prev,
-                            client: { ...prev.client, y: e.target.value }
-                          }))}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  💡 Dica: X=50 centraliza horizontalmente. Y mais alto (ex: 90-95) posiciona ao final do documento.
-                </p>
-              </CardContent>
-            </Card>
+            <SignaturePositioner
+              templateContent={getFilledTemplateContent() || ''}
+              positions={signaturePositions}
+              onPositionsChange={setSignaturePositions}
+            />
           )}
 
           <div className="flex gap-4">
