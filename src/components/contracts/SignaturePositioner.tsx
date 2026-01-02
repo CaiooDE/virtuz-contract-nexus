@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { GripVertical, Building2, User, ZoomIn, ZoomOut } from "lucide-react";
+import { GripVertical, Building2, User, ZoomIn, ZoomOut, ArrowDown } from "lucide-react";
 
 interface SignaturePosition {
   x: number;
@@ -27,21 +27,29 @@ export function SignaturePositioner({
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<"company" | "client" | null>(null);
-  const [scale, setScale] = useState(0.6);
-  const [contentHeight, setContentHeight] = useState(0);
+  const [scale, setScale] = useState(0.5);
 
-  // Measure actual content height
-  useEffect(() => {
-    if (contentRef.current) {
-      // Wait for render to complete
-      const timer = setTimeout(() => {
-        if (contentRef.current) {
-          setContentHeight(contentRef.current.scrollHeight);
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [templateContent, scale]);
+  const getPositionFromEvent = useCallback((clientX: number, clientY: number) => {
+    if (!contentRef.current || !containerRef.current) return null;
+
+    const contentRect = contentRef.current.getBoundingClientRect();
+    const scrollTop = containerRef.current.scrollTop;
+    const scrollLeft = containerRef.current.scrollLeft;
+    
+    // Position relative to the content div (accounting for scroll)
+    const relativeX = clientX - contentRect.left + scrollLeft;
+    const relativeY = clientY - contentRect.top + scrollTop;
+    
+    // Convert to percentage of actual content size
+    const contentWidth = contentRef.current.scrollWidth;
+    const contentHeight = contentRef.current.scrollHeight;
+    
+    const x = (relativeX / contentWidth) * 100;
+    const y = (relativeY / contentHeight) * 100;
+
+    // No clamping - completely free positioning
+    return { x, y };
+  }, []);
 
   const handleMouseDown = useCallback(
     (type: "company" | "client") => (e: React.MouseEvent) => {
@@ -54,32 +62,17 @@ export function SignaturePositioner({
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
-      if (!dragging || !contentRef.current) return;
-
-      const rect = contentRef.current.getBoundingClientRect();
-      const contentHeight = contentRef.current.scrollHeight;
-      const contentWidth = contentRef.current.scrollWidth;
+      if (!dragging) return;
       
-      // Get scroll position of the container
-      const scrollTop = containerRef.current?.scrollTop || 0;
-      
-      // Calculate position relative to the FULL content (not just visible area)
-      const relativeX = e.clientX - rect.left;
-      const relativeY = e.clientY - rect.top + scrollTop;
-      
-      const x = (relativeX / contentWidth) * 100;
-      const y = (relativeY / contentHeight) * 100;
-
-      // Clamp values between 0 and 100
-      const clampedX = Math.max(2, Math.min(98, x));
-      const clampedY = Math.max(2, Math.min(98, y));
+      const pos = getPositionFromEvent(e.clientX, e.clientY);
+      if (!pos) return;
 
       onPositionsChange({
         ...positions,
-        [dragging]: { x: clampedX, y: clampedY },
+        [dragging]: pos,
       });
     },
-    [dragging, positions, onPositionsChange]
+    [dragging, positions, onPositionsChange, getPositionFromEvent]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -96,138 +89,145 @@ export function SignaturePositioner({
 
   const handleTouchMove = useCallback(
     (e: React.TouchEvent) => {
-      if (!dragging || !contentRef.current) return;
-
-      const rect = contentRef.current.getBoundingClientRect();
-      const contentHeight = contentRef.current.scrollHeight;
-      const contentWidth = contentRef.current.scrollWidth;
+      if (!dragging) return;
+      
       const touch = e.touches[0];
-      
-      const scrollTop = containerRef.current?.scrollTop || 0;
-      
-      const relativeX = touch.clientX - rect.left;
-      const relativeY = touch.clientY - rect.top + scrollTop;
-      
-      const x = (relativeX / contentWidth) * 100;
-      const y = (relativeY / contentHeight) * 100;
-
-      const clampedX = Math.max(2, Math.min(98, x));
-      const clampedY = Math.max(2, Math.min(98, y));
+      const pos = getPositionFromEvent(touch.clientX, touch.clientY);
+      if (!pos) return;
 
       onPositionsChange({
         ...positions,
-        [dragging]: { x: clampedX, y: clampedY },
+        [dragging]: pos,
       });
     },
-    [dragging, positions, onPositionsChange]
+    [dragging, positions, onPositionsChange, getPositionFromEvent]
   );
 
   const handleTouchEnd = useCallback(() => {
     setDragging(null);
   }, []);
 
-  // Scroll to show signature when it's outside visible area
-  const scrollToSignature = (type: "company" | "client") => {
+  const scrollToEnd = () => {
+    if (containerRef.current) {
+      containerRef.current.scrollTo({ 
+        top: containerRef.current.scrollHeight, 
+        behavior: "smooth" 
+      });
+    }
+  };
+
+  const scrollToPosition = (y: number) => {
     if (!containerRef.current || !contentRef.current) return;
-    
-    const pos = positions[type];
     const contentHeight = contentRef.current.scrollHeight;
-    const targetY = (pos.y / 100) * contentHeight;
-    
+    const targetY = (y / 100) * contentHeight;
     containerRef.current.scrollTo({
-      top: Math.max(0, targetY - 200),
+      top: Math.max(0, targetY - 250),
       behavior: "smooth"
     });
   };
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <CardTitle className="text-lg flex items-center gap-2">
           <GripVertical className="h-5 w-5" />
           Posicionar Assinaturas
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Role o documento e arraste os marcadores para definir onde cada assinatura aparecerá
+          Arraste livremente os marcadores para qualquer posição do documento
         </p>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex gap-4">
+      <CardContent className="space-y-3">
+        {/* Controls */}
+        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b">
+          <div className="flex gap-3">
             <button
               type="button"
-              onClick={() => scrollToSignature("company")}
-              className="flex items-center gap-2 text-sm hover:underline"
+              onClick={() => scrollToPosition(positions.company.y)}
+              className="flex items-center gap-1.5 text-sm px-2 py-1 rounded hover:bg-muted transition-colors"
             >
-              <div className="w-4 h-4 bg-blue-500 rounded" />
-              <span>Empresa ({positions.company.y.toFixed(0)}%)</span>
+              <div className="w-3 h-3 bg-blue-500 rounded-sm" />
+              <span>Empresa</span>
             </button>
             <button
               type="button"
-              onClick={() => scrollToSignature("client")}
-              className="flex items-center gap-2 text-sm hover:underline"
+              onClick={() => scrollToPosition(positions.client.y)}
+              className="flex items-center gap-1.5 text-sm px-2 py-1 rounded hover:bg-muted transition-colors"
             >
-              <div className="w-4 h-4 bg-green-500 rounded" />
-              <span>Cliente ({positions.client.y.toFixed(0)}%)</span>
+              <div className="w-3 h-3 bg-green-500 rounded-sm" />
+              <span>Cliente</span>
             </button>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="icon"
-              className="h-8 w-8"
-              onClick={() => setScale(s => Math.max(0.4, s - 0.1))}
+              className="h-7 w-7"
+              onClick={() => setScale(s => Math.max(0.3, s - 0.1))}
             >
-              <ZoomOut className="h-4 w-4" />
+              <ZoomOut className="h-3.5 w-3.5" />
             </Button>
-            <span className="text-sm text-muted-foreground w-12 text-center">
+            <span className="text-xs text-muted-foreground w-10 text-center">
               {Math.round(scale * 100)}%
             </span>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="icon"
-              className="h-8 w-8"
-              onClick={() => setScale(s => Math.min(1, s + 0.1))}
+              className="h-7 w-7"
+              onClick={() => setScale(s => Math.min(1.2, s + 0.1))}
             >
-              <ZoomIn className="h-4 w-4" />
+              <ZoomIn className="h-3.5 w-3.5" />
+            </Button>
+            <div className="w-px h-4 bg-border mx-1" />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={scrollToEnd}
+            >
+              <ArrowDown className="h-3 w-3 mr-1" />
+              Final
             </Button>
           </div>
         </div>
 
+        {/* Document viewer */}
         <div 
           ref={containerRef}
-          className="border rounded-lg bg-muted/30 overflow-auto"
-          style={{ height: "500px" }}
+          className="border rounded-lg overflow-auto bg-neutral-100"
+          style={{ height: "550px" }}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {/* Content wrapper with relative positioning for markers */}
           <div 
             ref={contentRef}
-            className="relative bg-white min-h-full"
-            style={{ cursor: dragging ? "grabbing" : "default" }}
+            className="relative bg-white shadow-sm mx-auto"
+            style={{ 
+              width: `${100 / scale}%`,
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+              cursor: dragging ? "grabbing" : "default",
+            }}
           >
             {/* Document Content */}
             <div
-              className="p-8 text-sm leading-relaxed prose prose-sm max-w-none"
-              style={{ 
-                transform: `scale(${scale})`,
-                transformOrigin: "top left",
-                width: `${100 / scale}%`,
-              }}
+              className="p-8 text-sm leading-relaxed prose prose-sm max-w-none min-h-[800px]"
               dangerouslySetInnerHTML={{ __html: templateContent }}
             />
 
             {/* Company Signature Marker */}
             <div
-              className={`absolute cursor-grab select-none transition-shadow ${
-                dragging === "company" ? "shadow-lg ring-2 ring-blue-400 cursor-grabbing z-20" : "shadow-md hover:shadow-lg z-10"
-              }`}
+              className={`absolute select-none ${
+                dragging === "company" 
+                  ? "cursor-grabbing z-50 scale-110" 
+                  : "cursor-grab z-40 hover:scale-105"
+              } transition-transform`}
               style={{
                 left: `${positions.company.x}%`,
                 top: `${positions.company.y}%`,
@@ -236,18 +236,21 @@ export function SignaturePositioner({
               onMouseDown={handleMouseDown("company")}
               onTouchStart={handleTouchStart("company")}
             >
-              <div className="bg-blue-500 text-white px-3 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap shadow-lg">
-                <Building2 className="h-4 w-4" />
-                <span className="text-xs font-medium">Empresa</span>
+              <div className={`bg-blue-500 text-white px-3 py-1.5 rounded-md flex items-center gap-1.5 whitespace-nowrap shadow-lg ${
+                dragging === "company" ? "ring-2 ring-blue-300 ring-offset-2" : ""
+              }`}>
+                <Building2 className="h-3.5 w-3.5" />
+                <span className="text-xs font-medium">Assinatura Empresa</span>
               </div>
-              <div className="absolute left-1/2 -bottom-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-blue-500 transform -translate-x-1/2" />
             </div>
 
             {/* Client Signature Marker */}
             <div
-              className={`absolute cursor-grab select-none transition-shadow ${
-                dragging === "client" ? "shadow-lg ring-2 ring-green-400 cursor-grabbing z-20" : "shadow-md hover:shadow-lg z-10"
-              }`}
+              className={`absolute select-none ${
+                dragging === "client" 
+                  ? "cursor-grabbing z-50 scale-110" 
+                  : "cursor-grab z-40 hover:scale-105"
+              } transition-transform`}
               style={{
                 left: `${positions.client.x}%`,
                 top: `${positions.client.y}%`,
@@ -256,61 +259,27 @@ export function SignaturePositioner({
               onMouseDown={handleMouseDown("client")}
               onTouchStart={handleTouchStart("client")}
             >
-              <div className="bg-green-500 text-white px-3 py-2 rounded-lg flex items-center gap-2 whitespace-nowrap shadow-lg">
-                <User className="h-4 w-4" />
-                <span className="text-xs font-medium">Cliente</span>
+              <div className={`bg-green-500 text-white px-3 py-1.5 rounded-md flex items-center gap-1.5 whitespace-nowrap shadow-lg ${
+                dragging === "client" ? "ring-2 ring-green-300 ring-offset-2" : ""
+              }`}>
+                <User className="h-3.5 w-3.5" />
+                <span className="text-xs font-medium">Assinatura Cliente</span>
               </div>
-              <div className="absolute left-1/2 -bottom-1 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-green-500 transform -translate-x-1/2" />
             </div>
           </div>
         </div>
 
-        <div className="flex gap-2 flex-wrap">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              onPositionsChange({
-                company: { x: 25, y: 95 },
-                client: { x: 75, y: 95 },
-              });
-              setTimeout(() => scrollToSignature("company"), 100);
-            }}
-          >
-            Lado a Lado (Final)
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              onPositionsChange({
-                company: { x: 50, y: 90 },
-                client: { x: 50, y: 97 },
-              });
-              setTimeout(() => scrollToSignature("company"), 100);
-            }}
-          >
-            Empilhadas (Final)
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (containerRef.current) {
-                containerRef.current.scrollTo({ top: containerRef.current.scrollHeight, behavior: "smooth" });
-              }
-            }}
-          >
-            Ir para Final
-          </Button>
+        {/* Position info */}
+        <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
+          <div className="flex gap-4">
+            <span>
+              <span className="text-blue-500 font-medium">Empresa:</span> X:{positions.company.x.toFixed(1)}% Y:{positions.company.y.toFixed(1)}%
+            </span>
+            <span>
+              <span className="text-green-500 font-medium">Cliente:</span> X:{positions.client.x.toFixed(1)}% Y:{positions.client.y.toFixed(1)}%
+            </span>
+          </div>
         </div>
-
-        <p className="text-xs text-muted-foreground">
-          💡 Role para ver todo o documento. Clique no nome da assinatura para ir até ela. As posições são em % do documento total.
-        </p>
       </CardContent>
     </Card>
   );
