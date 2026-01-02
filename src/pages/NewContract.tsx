@@ -19,7 +19,7 @@ import { usePlans } from '@/hooks/usePlans';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Upload, FileText, X, Copy, CheckCircle, Eye, ArrowRight, Share2, ExternalLink, FileSignature } from 'lucide-react';
-import { SignaturePositioner } from '@/components/contracts/SignaturePositioner';
+import { TemplateEditor } from '@/components/templates/TemplateEditor';
 import { addMonths, format } from 'date-fns';
 import { numberToCurrencyWords } from '@/lib/numberToWords';
 
@@ -58,12 +58,8 @@ export default function NewContract() {
     contract_category: 'client',
   });
 
-  // Signature positions for Autentique (now using numbers for drag-and-drop)
-  // Signature positions for Autentique
-  const [signaturePositions, setSignaturePositions] = useState({
-    company: { x: 25, y: 90, page: 1 },
-    client: { x: 75, y: 90, page: 1 }
-  });
+  // Template content for editing (with signature markers)
+  const [editedTemplateContent, setEditedTemplateContent] = useState<string>('');
 
   // Generate client form link based on category and plan selection
   const [previewToken, setPreviewToken] = useState<string | null>(null);
@@ -92,6 +88,8 @@ export default function NewContract() {
         custom_data: initialCustomData,
         monthly_value: selectedPlan.base_value.toString(),
       }));
+      // Initialize template content for editing
+      setEditedTemplateContent(selectedPlan.template_content || '');
     }
   }, [formData.plan_id, selectedPlan]);
 
@@ -197,7 +195,7 @@ export default function NewContract() {
     let autentiqueLink: string | undefined;
 
     // Send to Autentique if not an existing contract and has template
-    if (!isExistingContract && selectedPlan?.template_content && formData.client_email) {
+    if (!isExistingContract && editedTemplateContent && formData.client_email) {
       setSendingToAutentique(true);
       try {
         const filledContent = getFilledTemplateContent();
@@ -210,18 +208,6 @@ export default function NewContract() {
             signerEmail: formData.client_email,
             documentContent: filledContent,
             contractCategory: formData.contract_category,
-            signaturePositions: {
-              company: {
-                x: signaturePositions.company.x,
-                y: signaturePositions.company.y,
-                page: signaturePositions.company.page,
-              },
-              client: {
-                x: signaturePositions.client.x,
-                y: signaturePositions.client.y,
-                page: signaturePositions.client.page,
-              }
-            }
           },
         });
 
@@ -319,11 +305,11 @@ export default function NewContract() {
     }
   };
 
-  // Generate filled contract preview HTML
+  // Generate filled contract preview HTML using edited template content
   const getFilledTemplateContent = () => {
-    if (!selectedPlan?.template_content) return null;
+    if (!editedTemplateContent) return null;
     
-    let filledContent = selectedPlan.template_content;
+    let filledContent = editedTemplateContent;
     
     // Replace custom variables with actual values
     Object.entries(formData.custom_data).forEach(([key, value]) => {
@@ -787,13 +773,25 @@ export default function NewContract() {
             </Card>
           )}
 
-          {/* Signature Positioning - Drag and Drop */}
+          {/* Template Editor with Signature Markers */}
           {!isExistingContract && selectedPlan?.template_content && (
-            <SignaturePositioner
-              templateContent={getFilledTemplateContent() || ''}
-              positions={signaturePositions}
-              onPositionsChange={setSignaturePositions}
-            />
+            <Card className="border-l-4 border-l-green-500">
+              <CardHeader>
+                <CardTitle>Template do Contrato</CardTitle>
+                <CardDescription>
+                  Edite o template e arraste os marcadores de assinatura para definir onde as assinaturas aparecerão
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <TemplateEditor
+                  content={editedTemplateContent}
+                  onChange={setEditedTemplateContent}
+                  variables={planVariables}
+                  includeBuiltInVariables={true}
+                  includeSignatureMarkers={true}
+                />
+              </CardContent>
+            </Card>
           )}
 
           <div className="flex gap-4">
