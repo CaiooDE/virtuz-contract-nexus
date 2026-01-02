@@ -59,9 +59,10 @@ export default function NewContract() {
   });
 
   // Signature positions for Autentique (now using numbers for drag-and-drop)
+  // Signature positions for Autentique
   const [signaturePositions, setSignaturePositions] = useState({
-    company: { x: 25, y: 90 },
-    client: { x: 75, y: 90 }
+    company: { x: 25, y: 90, page: 1 },
+    client: { x: 75, y: 90, page: 1 }
   });
 
   // Generate client form link based on category and plan selection
@@ -212,11 +213,13 @@ export default function NewContract() {
             signaturePositions: {
               company: {
                 x: signaturePositions.company.x,
-                y: signaturePositions.company.y
+                y: signaturePositions.company.y,
+                page: signaturePositions.company.page,
               },
               client: {
                 x: signaturePositions.client.x,
-                y: signaturePositions.client.y
+                y: signaturePositions.client.y,
+                page: signaturePositions.client.page,
               }
             }
           },

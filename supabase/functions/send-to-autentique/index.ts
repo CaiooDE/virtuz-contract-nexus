@@ -16,8 +16,8 @@ interface ContractData {
   documentContent: string; // HTML content
   contractCategory: string; // client, service_provider_pj, service_provider_pf, vendor_service, partnership, other
   signaturePositions?: {
-    company: { x: number; y: number };
-    client: { x: number; y: number };
+    company: { x: number; y: number; page?: number };
+    client: { x: number; y: number; page?: number };
   };
 }
 
@@ -129,21 +129,29 @@ ${documentContent}
     const { companyFirst } = getSignerRoles(contractCategory || 'client');
     
     // Default positions if not provided
-    const companyPos = signaturePositions?.company || { x: 50, y: 90 };
-    const clientPos = signaturePositions?.client || { x: 50, y: 95 };
-    
+    const companyPos = signaturePositions?.company || { x: 50, y: 90, page: 1 };
+    const clientPos = signaturePositions?.client || { x: 50, y: 95, page: 1 };
+
     const companySigner = {
       email: COMPANY_EMAIL,
       name: COMPANY_NAME,
       action: "SIGN",
-      positions: [{ x: companyPos.x.toString(), y: companyPos.y.toString(), z: "1" }]
+      positions: [{
+        x: companyPos.x.toString(),
+        y: companyPos.y.toString(),
+        z: (companyPos.page ?? 1).toString()
+      }]
     };
-    
+
     const clientSigner = {
       email: signerEmail,
       name: signerName,
       action: "SIGN",
-      positions: [{ x: clientPos.x.toString(), y: clientPos.y.toString(), z: "1" }]
+      positions: [{
+        x: clientPos.x.toString(),
+        y: clientPos.y.toString(),
+        z: (clientPos.page ?? 1).toString()
+      }]
     };
     
     // Order signers based on contract type
