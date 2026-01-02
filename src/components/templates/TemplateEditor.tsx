@@ -15,10 +15,16 @@ interface TemplateEditorProps {
   variables: PlanVariable[];
   readOnly?: boolean;
   includeBuiltInVariables?: boolean;
+  includeSignatureMarkers?: boolean;
 }
 
 // Helper to format currency fields with extenso placeholder
 const formatVariableForInsertion = (variableName: string, fieldType?: string): string => {
+  // Signature markers get special formatting
+  if (fieldType === 'signature') {
+    return `<p style="margin-top: 40px; text-align: center;"><strong>____________________________</strong><br/><strong>{{${variableName}}}</strong></p>`;
+  }
+
   const isCurrencyField =
     fieldType === 'currency' ||
     variableName.toLowerCase().includes('valor') ||
@@ -38,6 +44,7 @@ export function TemplateEditor({
   variables,
   readOnly = false,
   includeBuiltInVariables = true,
+  includeSignatureMarkers = false,
 }: TemplateEditorProps) {
   const draggedVariableRef = useRef<{ name: string; type?: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -121,6 +128,11 @@ export function TemplateEditor({
     { id: 'builtin_total_value', variable_name: 'total_value', label: 'Valor total', field_type: 'currency' },
   ] as const;
 
+  const signatureMarkers = [
+    { id: 'sig_company', variable_name: 'ASSINATURA_EMPRESA', label: 'Assinatura da Empresa', field_type: 'signature' },
+    { id: 'sig_client', variable_name: 'ASSINATURA_CLIENTE', label: 'Assinatura do Cliente', field_type: 'signature' },
+  ] as const;
+
   return (
     <div className="flex gap-4 h-[500px]">
       {/* Hidden file input for images */}
@@ -201,7 +213,7 @@ export function TemplateEditor({
       </div>
 
       {/* Variables Panel */}
-      {!readOnly && (variables.length > 0 || includeBuiltInVariables) && (
+      {!readOnly && (variables.length > 0 || includeBuiltInVariables || includeSignatureMarkers) && (
         <div className="w-64 border rounded-lg p-4 bg-muted/30 overflow-auto">
           <h4 className="font-medium mb-3 text-sm">Variáveis Disponíveis</h4>
           <p className="text-xs text-muted-foreground mb-3">Arraste as variáveis para o editor para posicioná-las no template</p>
@@ -232,7 +244,7 @@ export function TemplateEditor({
           )}
 
           {variables.length > 0 && (
-            <div>
+            <div className="mb-4">
               <p className="text-xs font-medium mb-2">Campos do plano</p>
               <div className="space-y-2">
                 {variables.map((variable) => {
@@ -263,6 +275,31 @@ export function TemplateEditor({
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {includeSignatureMarkers && (
+            <div>
+              <p className="text-xs font-medium mb-2 text-green-600">Marcadores de Assinatura</p>
+              <div className="space-y-2">
+                {signatureMarkers.map((marker) => (
+                  <div
+                    key={marker.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, marker.variable_name, marker.field_type)}
+                    className="flex items-center gap-2 p-2 border border-green-300 rounded bg-green-50 dark:bg-green-950/30 cursor-grab active:cursor-grabbing hover:bg-green-100 dark:hover:bg-green-950/50 transition-colors"
+                  >
+                    <GripVertical className="h-3 w-3 text-green-600" />
+                    <div className="flex-1 min-w-0">
+                      <code className="text-xs bg-green-200 dark:bg-green-900 px-1 rounded block truncate font-bold text-green-800 dark:text-green-200">{`{{${marker.variable_name}}}`}</code>
+                      <span className="text-xs text-green-700 dark:text-green-300">{marker.label}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-2">
+                Arraste para definir onde as assinaturas aparecerão no documento
+              </p>
             </div>
           )}
         </div>

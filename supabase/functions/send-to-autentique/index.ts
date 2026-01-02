@@ -13,12 +13,8 @@ interface ContractData {
   documentName: string;
   signerName: string;
   signerEmail: string;
-  documentContent: string; // HTML content
+  documentContent: string; // HTML content with signature markers
   contractCategory: string; // client, service_provider_pj, service_provider_pf, vendor_service, partnership, other
-  signaturePositions?: {
-    company: { x: number; y: number; page?: number };
-    client: { x: number; y: number; page?: number };
-  };
 }
 
 // Company signer info
@@ -63,13 +59,20 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { contractId, documentName, signerName, signerEmail, documentContent, contractCategory, signaturePositions }: ContractData = await req.json();
+    const { contractId, documentName, signerName, signerEmail, documentContent, contractCategory }: ContractData = await req.json();
 
     console.log(`Sending contract ${contractId} to Autentique for ${signerEmail}, category: ${contractCategory}`);
 
     if (!contractId || !signerEmail || !documentContent) {
       throw new Error('Missing required fields: contractId, signerEmail, or documentContent');
     }
+
+    // Replace signature markers with actual signature placeholders for the document
+    // The markers {{ASSINATURA_EMPRESA}} and {{ASSINATURA_CLIENTE}} are already in the HTML
+    // We keep them as-is since they serve as visual placeholders in the document
+    let processedContent = documentContent;
+    processedContent = processedContent.replace(/\{\{ASSINATURA_EMPRESA\}\}/g, COMPANY_NAME);
+    processedContent = processedContent.replace(/\{\{ASSINATURA_CLIENTE\}\}/g, signerName);
 
     // Convert HTML to PDF using a simple approach - create a blob
     // For production, you might want to use a proper HTML to PDF service
@@ -86,7 +89,7 @@ serve(async (req) => {
   </style>
 </head>
 <body>
-${documentContent}
+${processedContent}
 </body>
 </html>`;
 
@@ -127,31 +130,19 @@ ${documentContent}
 
     // Determine signer order based on contract category
     const { companyFirst } = getSignerRoles(contractCategory || 'client');
-    
-    // Default positions if not provided
-    const companyPos = signaturePositions?.company || { x: 50, y: 90, page: 1 };
-    const clientPos = signaturePositions?.client || { x: 50, y: 95, page: 1 };
 
+    // Signers without manual positions - Autentique will use default positioning
+    // The signature lines are already in the document content
     const companySigner = {
       email: COMPANY_EMAIL,
       name: COMPANY_NAME,
       action: "SIGN",
-      positions: [{
-        x: companyPos.x.toString(),
-        y: companyPos.y.toString(),
-        z: (companyPos.page ?? 1).toString()
-      }]
     };
 
     const clientSigner = {
       email: signerEmail,
       name: signerName,
       action: "SIGN",
-      positions: [{
-        x: clientPos.x.toString(),
-        y: clientPos.y.toString(),
-        z: (clientPos.page ?? 1).toString()
-      }]
     };
     
     // Order signers based on contract type
