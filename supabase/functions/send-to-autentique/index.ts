@@ -15,6 +15,10 @@ interface ContractData {
   signerEmail: string;
   documentContent: string; // HTML content
   contractCategory: string; // client, service_provider_pj, service_provider_pf, vendor_service, partnership, other
+  signaturePositions?: {
+    company: { x: number; y: number };
+    client: { x: number; y: number };
+  };
 }
 
 // Company signer info
@@ -59,7 +63,7 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { contractId, documentName, signerName, signerEmail, documentContent, contractCategory }: ContractData = await req.json();
+    const { contractId, documentName, signerName, signerEmail, documentContent, contractCategory, signaturePositions }: ContractData = await req.json();
 
     console.log(`Sending contract ${contractId} to Autentique for ${signerEmail}, category: ${contractCategory}`);
 
@@ -124,16 +128,22 @@ ${documentContent}
     // Determine signer order based on contract category
     const { companyFirst } = getSignerRoles(contractCategory || 'client');
     
+    // Default positions if not provided
+    const companyPos = signaturePositions?.company || { x: 50, y: 90 };
+    const clientPos = signaturePositions?.client || { x: 50, y: 95 };
+    
     const companySigner = {
       email: COMPANY_EMAIL,
       name: COMPANY_NAME,
-      action: "SIGN"
+      action: "SIGN",
+      positions: [{ x: companyPos.x.toString(), y: companyPos.y.toString(), z: "1" }]
     };
     
     const clientSigner = {
       email: signerEmail,
       name: signerName,
-      action: "SIGN"
+      action: "SIGN",
+      positions: [{ x: clientPos.x.toString(), y: clientPos.y.toString(), z: "1" }]
     };
     
     // Order signers based on contract type

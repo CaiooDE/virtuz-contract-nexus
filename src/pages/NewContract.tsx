@@ -20,6 +20,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Upload, FileText, X, Copy, CheckCircle, Eye, ArrowRight, Share2, ExternalLink, FileSignature } from 'lucide-react';
 import { addMonths, format } from 'date-fns';
+import { numberToCurrencyWords } from '@/lib/numberToWords';
 
 type CreatedContract = {
   id: string;
@@ -54,6 +55,12 @@ export default function NewContract() {
     custom_data: {} as Record<string, string>,
     status: 'draft' as ContractStatus,
     contract_category: 'client',
+  });
+
+  // Signature positions for Autentique
+  const [signaturePositions, setSignaturePositions] = useState({
+    company: { x: '50', y: '90' },
+    client: { x: '50', y: '95' }
   });
 
   // Generate client form link based on category and plan selection
@@ -201,6 +208,16 @@ export default function NewContract() {
             signerEmail: formData.client_email,
             documentContent: filledContent,
             contractCategory: formData.contract_category,
+            signaturePositions: {
+              company: {
+                x: parseFloat(signaturePositions.company.x),
+                y: parseFloat(signaturePositions.company.y)
+              },
+              client: {
+                x: parseFloat(signaturePositions.client.x),
+                y: parseFloat(signaturePositions.client.y)
+              }
+            }
           },
         });
 
@@ -304,18 +321,49 @@ export default function NewContract() {
     
     let filledContent = selectedPlan.template_content;
     
-    // Replace variables with actual values
+    // Replace custom variables with actual values
     Object.entries(formData.custom_data).forEach(([key, value]) => {
       const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-      filledContent = filledContent.replace(regex, value || `{{${key}}}`);
+      
+      // Check if this variable is currency type
+      const variable = planVariables.find(v => v.variable_name === key);
+      if (variable?.field_type === 'currency' && value) {
+        const numValue = parseFloat(value);
+        if (!isNaN(numValue)) {
+          filledContent = filledContent.replace(regex, `R$ ${numValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+          // Also replace extenso version
+          const extensoRegex = new RegExp(`\\{\\{${key}_extenso\\}\\}`, 'g');
+          filledContent = filledContent.replace(extensoRegex, numberToCurrencyWords(numValue));
+        }
+      } else {
+        filledContent = filledContent.replace(regex, value || `{{${key}}}`);
+      }
     });
     
-    // Also replace common contract variables
+    // Replace common contract variables
     filledContent = filledContent.replace(/\{\{client_name\}\}/g, formData.client_name || '{{client_name}}');
     filledContent = filledContent.replace(/\{\{start_date\}\}/g, formData.start_date ? format(new Date(formData.start_date), 'dd/MM/yyyy') : '{{start_date}}');
     filledContent = filledContent.replace(/\{\{end_date\}\}/g, formData.end_date ? format(new Date(formData.end_date), 'dd/MM/yyyy') : '{{end_date}}');
-    filledContent = filledContent.replace(/\{\{monthly_value\}\}/g, formData.monthly_value ? `R$ ${parseFloat(formData.monthly_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '{{monthly_value}}');
-    filledContent = filledContent.replace(/\{\{total_value\}\}/g, formData.total_value ? `R$ ${parseFloat(formData.total_value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '{{total_value}}');
+    
+    // Monthly value with extenso
+    if (formData.monthly_value) {
+      const monthlyNum = parseFloat(formData.monthly_value);
+      filledContent = filledContent.replace(/\{\{monthly_value\}\}/g, `R$ ${monthlyNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+      filledContent = filledContent.replace(/\{\{monthly_value_extenso\}\}/g, numberToCurrencyWords(monthlyNum));
+    } else {
+      filledContent = filledContent.replace(/\{\{monthly_value\}\}/g, '{{monthly_value}}');
+      filledContent = filledContent.replace(/\{\{monthly_value_extenso\}\}/g, '{{monthly_value_extenso}}');
+    }
+    
+    // Total value with extenso
+    if (formData.total_value) {
+      const totalNum = parseFloat(formData.total_value);
+      filledContent = filledContent.replace(/\{\{total_value\}\}/g, `R$ ${totalNum.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+      filledContent = filledContent.replace(/\{\{total_value_extenso\}\}/g, numberToCurrencyWords(totalNum));
+    } else {
+      filledContent = filledContent.replace(/\{\{total_value\}\}/g, '{{total_value}}');
+      filledContent = filledContent.replace(/\{\{total_value_extenso\}\}/g, '{{total_value_extenso}}');
+    }
     
     return filledContent;
   };
@@ -731,6 +779,97 @@ export default function NewContract() {
                     {renderVariableInput(variable, formData.custom_data[variable.variable_name] ?? '')}
                   </div>
                 ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Signature Positioning - Only show when not existing contract */}
+          {!isExistingContract && selectedPlan?.template_content && (
+            <Card className="border-l-4 border-l-green-500">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileSignature className="h-5 w-5 text-green-500" />
+                  Posicionamento das Assinaturas
+                </CardTitle>
+                <CardDescription>
+                  Defina onde cada assinatura aparecerá no documento (posição em % da página, 0-100)
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Company Signature */}
+                  <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                    <Label className="text-base font-medium">Assinatura da Empresa (Virtuz Mídia)</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="company_x" className="text-xs text-muted-foreground">Posição Horizontal (X %)</Label>
+                        <Input
+                          id="company_x"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={signaturePositions.company.x}
+                          onChange={(e) => setSignaturePositions(prev => ({
+                            ...prev,
+                            company: { ...prev.company, x: e.target.value }
+                          }))}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="company_y" className="text-xs text-muted-foreground">Posição Vertical (Y %)</Label>
+                        <Input
+                          id="company_y"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={signaturePositions.company.y}
+                          onChange={(e) => setSignaturePositions(prev => ({
+                            ...prev,
+                            company: { ...prev.company, y: e.target.value }
+                          }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Client Signature */}
+                  <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                    <Label className="text-base font-medium">Assinatura do Cliente</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label htmlFor="client_x" className="text-xs text-muted-foreground">Posição Horizontal (X %)</Label>
+                        <Input
+                          id="client_x"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={signaturePositions.client.x}
+                          onChange={(e) => setSignaturePositions(prev => ({
+                            ...prev,
+                            client: { ...prev.client, x: e.target.value }
+                          }))}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="client_y" className="text-xs text-muted-foreground">Posição Vertical (Y %)</Label>
+                        <Input
+                          id="client_y"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={signaturePositions.client.y}
+                          onChange={(e) => setSignaturePositions(prev => ({
+                            ...prev,
+                            client: { ...prev.client, y: e.target.value }
+                          }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  💡 Dica: X=50 centraliza horizontalmente. Y mais alto (ex: 90-95) posiciona ao final do documento.
+                </p>
               </CardContent>
             </Card>
           )}
