@@ -20,6 +20,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Upload, FileText, X, Copy, CheckCircle, Eye, ArrowRight, Share2, ExternalLink, FileSignature } from 'lucide-react';
 import { TemplateEditor } from '@/components/templates/TemplateEditor';
+import { SignaturePlacementStep, SignaturePosition } from '@/components/contracts/SignaturePlacementStep';
 import { addMonths, format } from 'date-fns';
 import { numberToCurrencyWords } from '@/lib/numberToWords';
 
@@ -42,6 +43,10 @@ export default function NewContract() {
   const [createdContract, setCreatedContract] = useState<CreatedContract | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [sendingToAutentique, setSendingToAutentique] = useState(false);
+  
+  // Signature placement step
+  const [showSignaturePlacement, setShowSignaturePlacement] = useState(false);
+  const [signaturePositions, setSignaturePositions] = useState<SignaturePosition[]>([]);
 
   const [formData, setFormData] = useState({
     client_name: '',
@@ -156,7 +161,8 @@ export default function NewContract() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Called when form is submitted - goes to signature placement if needed
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (isExistingContract && !attachedFile) {
@@ -178,6 +184,24 @@ export default function NewContract() {
       return;
     }
 
+    // If it's a new contract with template, show signature placement step
+    if (!isExistingContract && editedTemplateContent && formData.client_email) {
+      setShowSignaturePlacement(true);
+      return;
+    }
+
+    // Otherwise, submit directly (for existing contracts)
+    await submitContract([]);
+  };
+
+  // Called after signature placement is complete
+  const handleSignaturePlacementComplete = async (positions: SignaturePosition[]) => {
+    setSignaturePositions(positions);
+    await submitContract(positions);
+  };
+
+  // Final contract submission
+  const submitContract = async (positions: SignaturePosition[]) => {
     const result = await createContract.mutateAsync({
       client_name: formData.client_name,
       client_email: formData.client_email || undefined,
@@ -208,6 +232,13 @@ export default function NewContract() {
             signerEmail: formData.client_email,
             documentContent: filledContent,
             contractCategory: formData.contract_category,
+            signaturePositions: positions.map(p => ({
+              id: p.id,
+              label: p.label,
+              x: p.x,
+              y: p.y,
+              page: p.page,
+            })),
           },
         });
 
@@ -229,6 +260,7 @@ export default function NewContract() {
         console.error('Error calling Autentique:', error);
       } finally {
         setSendingToAutentique(false);
+        setShowSignaturePlacement(false);
       }
     }
 
@@ -357,6 +389,35 @@ export default function NewContract() {
     
     return filledContent;
   };
+
+  // Show signature placement step
+  if (showSignaturePlacement) {
+    const filledContent = getFilledTemplateContent();
+    
+    return (
+      <AppLayout>
+        <div className="p-6 max-w-7xl">
+          <div className="relative mb-6">
+            <div className="absolute -left-6 top-0 w-1 h-full gradient-primary rounded-r" />
+            <h1 className="text-3xl font-bold">Posicionar Assinaturas</h1>
+            <p className="text-muted-foreground">
+              Arraste as assinaturas para o local desejado no documento
+            </p>
+          </div>
+          
+          <SignaturePlacementStep
+            htmlContent={filledContent || ''}
+            onComplete={handleSignaturePlacementComplete}
+            onCancel={() => setShowSignaturePlacement(false)}
+            signers={[
+              { id: 'company', label: 'Virtuz Mídia (Empresa)', name: 'Virtuz Mídia' },
+              { id: 'client', label: formData.client_name || 'Cliente', name: formData.client_name },
+            ]}
+          />
+        </div>
+      </AppLayout>
+    );
+  }
 
   // Show success screen after contract creation
   if (createdContract) {
@@ -508,7 +569,7 @@ export default function NewContract() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleFormSubmit} className="space-y-6">
           {/* Existing Contract Toggle */}
           <Card className="border-l-4 border-l-muted-foreground">
             <CardHeader className="pb-3">
