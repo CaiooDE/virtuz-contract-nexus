@@ -8,13 +8,22 @@ const corsHeaders = {
 
 const AUTENTIQUE_API_URL = "https://api.autentique.com.br/v2/graphql";
 
+interface SignaturePosition {
+  id: string;
+  label: string;
+  x: number; // percentage from left (0-100)
+  y: number; // percentage from top (0-100)
+  page: number;
+}
+
 interface ContractData {
   contractId: string;
   documentName: string;
   signerName: string;
   signerEmail: string;
-  documentContent: string; // HTML content with signature markers
+  documentContent: string; // HTML content
   contractCategory: string; // client, service_provider_pj, service_provider_pf, vendor_service, partnership, other
+  signaturePositions?: SignaturePosition[]; // Visual positions from drag and drop
 }
 
 // Company signer info
@@ -59,23 +68,21 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { contractId, documentName, signerName, signerEmail, documentContent, contractCategory }: ContractData = await req.json();
+    const { contractId, documentName, signerName, signerEmail, documentContent, contractCategory, signaturePositions }: ContractData = await req.json();
 
     console.log(`Sending contract ${contractId} to Autentique for ${signerEmail}, category: ${contractCategory}`);
+    console.log(`Signature positions received:`, JSON.stringify(signaturePositions));
 
     if (!contractId || !signerEmail || !documentContent) {
       throw new Error('Missing required fields: contractId, signerEmail, or documentContent');
     }
 
     // Replace signature markers with actual signature placeholders for the document
-    // The markers {{ASSINATURA_EMPRESA}} and {{ASSINATURA_CLIENTE}} are already in the HTML
-    // We keep them as-is since they serve as visual placeholders in the document
     let processedContent = documentContent;
     processedContent = processedContent.replace(/\{\{ASSINATURA_EMPRESA\}\}/g, COMPANY_NAME);
     processedContent = processedContent.replace(/\{\{ASSINATURA_CLIENTE\}\}/g, signerName);
 
     // Convert HTML to PDF using a simple approach - create a blob
-    // For production, you might want to use a proper HTML to PDF service
     const htmlDocument = `
 <!DOCTYPE html>
 <html>
@@ -131,19 +138,41 @@ ${processedContent}
     // Determine signer order based on contract category
     const { companyFirst } = getSignerRoles(contractCategory || 'client');
 
-    // Signers without manual positions - Autentique will use default positioning
-    // The signature lines are already in the document content
-    const companySigner = {
-      email: COMPANY_EMAIL,
-      name: COMPANY_NAME,
-      action: "SIGN",
+    // Find positions for each signer
+    const companyPosition = signaturePositions?.find(p => p.id === 'company');
+    const clientPosition = signaturePositions?.find(p => p.id === 'client');
+
+    // Build signers with positions if provided
+    // Autentique uses coordinates where:
+    // x: horizontal position (0-100% from left)
+    // y: vertical position (0-100% from top)
+    // z: page number (1-indexed)
+    const buildSignerWithPosition = (
+      email: string, 
+      name: string, 
+      position?: SignaturePosition
+    ) => {
+      const signer: Record<string, unknown> = {
+        email,
+        name,
+        action: "SIGN",
+      };
+
+      // Add position if provided
+      if (position) {
+        signer.positions = [{
+          x: Math.round(position.x),  // X coordinate (percentage from left)
+          y: Math.round(position.y),  // Y coordinate (percentage from top)
+          z: position.page,           // Page number
+        }];
+        console.log(`Signer ${name} position: page ${position.page}, x=${position.x}%, y=${position.y}%`);
+      }
+
+      return signer;
     };
 
-    const clientSigner = {
-      email: signerEmail,
-      name: signerName,
-      action: "SIGN",
-    };
+    const companySigner = buildSignerWithPosition(COMPANY_EMAIL, COMPANY_NAME, companyPosition);
+    const clientSigner = buildSignerWithPosition(signerEmail, signerName, clientPosition);
     
     // Order signers based on contract type
     const signers = companyFirst 
@@ -151,6 +180,7 @@ ${processedContent}
       : [clientSigner, companySigner];
     
     console.log(`Signers order: ${companyFirst ? 'Company first' : 'Client first'}`);
+    console.log(`Signers with positions:`, JSON.stringify(signers));
 
     const operations = JSON.stringify({
       query,
