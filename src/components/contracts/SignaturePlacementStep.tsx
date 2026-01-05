@@ -1,21 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Document, Page, pdfjs } from 'react-pdf';
-import {
-  DndContext,
-  DragEndEvent,
-  PointerSensor,
-  useDraggable,
-  useDroppable,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Loader2, ZoomIn, ZoomOut, FileSignature, GripVertical, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { Loader2, ZoomIn, ZoomOut, FileSignature, ChevronLeft, ChevronRight, Check, MousePointer } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-// Configure PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 const A4_WIDTH = 595;
 const A4_HEIGHT = 842;
@@ -23,128 +10,32 @@ const A4_HEIGHT = 842;
 export interface SignaturePosition {
   id: string;
   label: string;
-  x: number; // % from left within page (0-100)
-  y: number; // % from top within page (0-100)
+  x: number; // % from left (0-100)
+  y: number; // % from top within the page (0-100)
   page: number; // 1-indexed
   placed: boolean;
 }
 
 interface SignaturePlacementStepProps {
-  /** Best option: a real PDF (multi-page supported). */
-  pdfUrl?: string;
-  /** Fallback: HTML preview; page splitting is approximate by A4 height. */
   htmlContent?: string;
   onComplete: (positions: SignaturePosition[]) => void;
   onCancel: () => void;
   signers: { id: string; label: string; name: string }[];
 }
 
-function DraggableSignature({
-  id,
-  label,
-  placed,
-}: {
-  id: string;
-  label: string;
-  placed: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id,
-    data: { source: 'sidebar' },
-  });
-
-  const style = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-        zIndex: 1000,
-      }
-    : undefined;
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
-      className={cn(
-        'flex items-center gap-2 px-3 py-2 rounded-lg border-2 cursor-grab active:cursor-grabbing transition-all',
-        isDragging && 'opacity-80 shadow-lg',
-        placed ? 'border-green-500 bg-green-50 dark:bg-green-950/30' : 'border-primary bg-primary/5 hover:bg-primary/10'
-      )}
-    >
-      <GripVertical className="h-4 w-4 text-muted-foreground" />
-      <FileSignature className="h-4 w-4" />
-      <span className="text-sm font-medium">{label}</span>
-      {placed && <Check className="h-4 w-4 text-green-500" />}
-    </div>
-  );
-}
-
-function PlacedSignature({
-  position,
-  pageHeightPx,
-  pageWidthPx,
-}: {
-  position: SignaturePosition;
-  pageHeightPx: number;
-  pageWidthPx: number;
-}) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `placed-${position.id}`,
-    data: { source: 'placed', originalId: position.id },
-  });
-
-  const pageOffsetTopPx = (position.page - 1) * pageHeightPx;
-  const leftPx = (position.x / 100) * pageWidthPx;
-  const topPx = pageOffsetTopPx + (position.y / 100) * pageHeightPx;
-
-  const style: React.CSSProperties = {
-    position: 'absolute',
-    left: transform ? leftPx + transform.x : leftPx,
-    top: transform ? topPx + transform.y : topPx,
-    zIndex: isDragging ? 1000 : 10,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
-      className={cn(
-        'flex flex-col items-center gap-1 px-4 py-2 rounded-lg border-2 border-dashed border-green-500 bg-green-100/90 dark:bg-green-950/90 cursor-grab active:cursor-grabbing transition-shadow',
-        isDragging && 'shadow-xl'
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <GripVertical className="h-4 w-4 text-green-600" />
-        <FileSignature className="h-4 w-4 text-green-600" />
-        <span className="text-sm font-medium text-green-800 dark:text-green-200">{position.label}</span>
-      </div>
-      <div className="text-[10px] text-green-600">____________________________</div>
-    </div>
-  );
-}
-
 export function SignaturePlacementStep({
-  pdfUrl,
   htmlContent,
   onComplete,
   onCancel,
   signers,
 }: SignaturePlacementStepProps) {
-  const isPdfMode = Boolean(pdfUrl);
-
-  const [numPages, setNumPages] = useState<number>(isPdfMode ? 0 : 1);
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [scale, setScale] = useState<number>(1);
-  const [loading, setLoading] = useState(true);
-
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState<number>(0.8);
+  const [selectedSignerId, setSelectedSignerId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  const { setNodeRef: setDroppableRef } = useDroppable({ id: 'doc-canvas' });
+  // Estimate number of pages based on content height
+  const [numPages, setNumPages] = useState(1);
 
   // Initialize signature positions
   const [positions, setPositions] = useState<SignaturePosition[]>(() =>
@@ -158,264 +49,258 @@ export function SignaturePlacementStep({
     }))
   );
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
-    })
-  );
-
-  // HTML mode: estimate number of pages from rendered content height
+  // Estimate pages from content height
   useEffect(() => {
-    if (isPdfMode) return;
-    const el = contentRef.current;
-    if (!el) return;
+    if (!contentRef.current) return;
+    const timer = setTimeout(() => {
+      if (contentRef.current) {
+        const contentHeight = contentRef.current.scrollHeight;
+        const pageHeight = A4_HEIGHT * scale;
+        const estimated = Math.max(1, Math.ceil(contentHeight / pageHeight));
+        setNumPages(estimated);
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [htmlContent, scale]);
 
-    // Wait a tick to allow layout
-    const t = window.setTimeout(() => {
-      const pageHeightPx = A4_HEIGHT * scale;
-      const h = el.scrollHeight * scale;
-      const estimatedPages = Math.max(1, Math.ceil(h / pageHeightPx));
-      setNumPages(estimatedPages);
-      setLoading(false);
-    }, 50);
+  const pageWidthPx = A4_WIDTH * scale;
+  const pageHeightPx = A4_HEIGHT * scale;
+  const totalHeightPx = pageHeightPx * numPages;
 
-    return () => window.clearTimeout(t);
-  }, [isPdfMode, htmlContent, scale]);
+  // Handle click on the document canvas
+  const handleCanvasClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!selectedSignerId || !canvasRef.current) return;
 
-  const handleDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
-    setNumPages(numPages);
-    setLoading(false);
-  }, []);
+      const rect = canvasRef.current.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top + canvasRef.current.scrollTop;
 
-  const clampPercent = (v: number) => Math.max(1, Math.min(99, v));
+      // Calculate page and position
+      const page = Math.max(1, Math.ceil(clickY / pageHeightPx));
+      const yInPage = clickY - (page - 1) * pageHeightPx;
 
-  const computeFromDrop = useCallback(
-    (args: { centerX: number; centerY: number; pageWidthPx: number; pageHeightPx: number }) => {
-      const { centerX, centerY, pageWidthPx, pageHeightPx } = args;
-
-      // Convert to page + %
-      const page = Math.max(1, Math.floor(centerY / pageHeightPx) + 1);
-      const yInPage = centerY - (page - 1) * pageHeightPx;
-
-      const xPct = clampPercent((centerX / pageWidthPx) * 100);
-      const yPct = clampPercent((yInPage / pageHeightPx) * 100);
-
-      return { page, xPct, yPct };
-    },
-    []
-  );
-
-  const scrollToPage = useCallback(
-    (page: number) => {
-      const scroller = scrollRef.current;
-      if (!scroller) return;
-      const pageHeightPx = A4_HEIGHT * scale;
-      scroller.scrollTo({ top: (page - 1) * pageHeightPx, behavior: 'smooth' });
-    },
-    [scale]
-  );
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      if (!event.over || event.over.id !== 'doc-canvas') return;
-      if (!canvasRef.current) return;
-
-      const translated = event.active.rect.current.translated;
-      if (!translated) return;
-
-      const canvasRect = canvasRef.current.getBoundingClientRect();
-
-      // center of dragged item relative to canvas
-      const centerX = translated.left - canvasRect.left + translated.width / 2;
-      const centerY = translated.top - canvasRect.top + translated.height / 2;
-
-      const pageWidthPx = A4_WIDTH * scale;
-      const pageHeightPx = A4_HEIGHT * scale;
-
-      const { page, xPct, yPct } = computeFromDrop({ centerX, centerY, pageWidthPx, pageHeightPx });
-
-      const activeId = String(event.active.id);
-      const isPlaced = activeId.startsWith('placed-');
-      const id = isPlaced ? activeId.replace('placed-', '') : activeId;
+      const xPct = Math.max(5, Math.min(95, (clickX / pageWidthPx) * 100));
+      const yPct = Math.max(5, Math.min(95, (yInPage / pageHeightPx) * 100));
 
       setPositions((prev) =>
         prev.map((p) =>
-          p.id === id
-            ? {
-                ...p,
-                placed: true,
-                page: isPdfMode ? currentPage : page,
-                x: xPct,
-                y: isPdfMode ? clampPercent((centerY / pageHeightPx) * 100) : yPct,
-              }
+          p.id === selectedSignerId
+            ? { ...p, x: xPct, y: yPct, page, placed: true }
             : p
         )
       );
 
-      if (!isPdfMode) {
-        setCurrentPage(page);
-      }
+      // Clear selection after placing
+      setSelectedSignerId(null);
     },
-    [computeFromDrop, currentPage, isPdfMode, scale]
+    [selectedSignerId, pageWidthPx, pageHeightPx]
   );
+
+  // Handle clicking on a placed signature to reposition it
+  const handlePlacedSignatureClick = (e: React.MouseEvent, signerId: string) => {
+    e.stopPropagation();
+    setSelectedSignerId(signerId);
+  };
 
   const allPlaced = positions.every((p) => p.placed);
   const placedPositions = positions.filter((p) => p.placed);
 
-  const pageWidthPx = A4_WIDTH * scale;
-  const pageHeightPx = A4_HEIGHT * scale;
-
-  // In PDF mode we show a single page at a time; in HTML mode we allow scrolling across pages
-  const visiblePlaced = isPdfMode ? placedPositions.filter((p) => p.page === currentPage) : placedPositions;
-
   return (
     <div className="flex flex-col h-full gap-4">
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-        <div className="flex gap-4 h-[600px]">
-          {/* Document Area - 70% */}
-          <div className="flex-[7] flex flex-col border rounded-lg overflow-hidden bg-muted/30">
-            <div className="flex items-center justify-between p-2 border-b bg-background">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setScale((s) => Math.max(0.7, Number((s - 0.1).toFixed(2))))}
-                  disabled={scale <= 0.7}
-                >
-                  <ZoomOut className="h-4 w-4" />
-                </Button>
-                <span className="text-sm min-w-[60px] text-center">{Math.round(scale * 100)}%</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setScale((s) => Math.min(1.6, Number((s + 0.1).toFixed(2))))}
-                  disabled={scale >= 1.6}
-                >
-                  <ZoomIn className="h-4 w-4" />
-                </Button>
-              </div>
-
-              {numPages > 1 && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setCurrentPage((p) => Math.max(1, p - 1));
-                      if (!isPdfMode) scrollToPage(Math.max(1, currentPage - 1));
-                    }}
-                    disabled={currentPage <= 1}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="text-sm">Página {currentPage} de {numPages}</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setCurrentPage((p) => Math.min(numPages, p + 1));
-                      if (!isPdfMode) scrollToPage(Math.min(numPages, currentPage + 1));
-                    }}
-                    disabled={currentPage >= numPages}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            <div ref={scrollRef} className="flex-1 overflow-auto flex items-start justify-center p-4">
-              <div
-                ref={(node) => {
-                  canvasRef.current = node;
-                  setDroppableRef(node);
-                }}
-                className="relative bg-white shadow-lg"
-                style={{ width: `${pageWidthPx}px`, minHeight: `${isPdfMode ? pageHeightPx : pageHeightPx * numPages}px` }}
+      <div className="flex gap-4 h-[650px]">
+        {/* Document Area - 70% */}
+        <div className="flex-[7] flex flex-col border rounded-lg overflow-hidden bg-muted/30">
+          {/* Controls */}
+          <div className="flex items-center justify-between p-2 border-b bg-background">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setScale((s) => Math.max(0.5, Number((s - 0.1).toFixed(2))))}
+                disabled={scale <= 0.5}
               >
-                {loading && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  </div>
-                )}
-
-                {pdfUrl && (
-                  <Document
-                    file={pdfUrl}
-                    onLoadSuccess={handleDocumentLoadSuccess}
-                    loading={
-                      <div className="flex items-center justify-center h-full">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                      </div>
-                    }
-                  >
-                    <Page pageNumber={currentPage} scale={scale} renderTextLayer={false} renderAnnotationLayer={false} />
-                  </Document>
-                )}
-
-                {htmlContent && !pdfUrl && (
-                  <div ref={contentRef} className="absolute inset-0">
-                    {/* page separators */}
-                    {Array.from({ length: numPages }).map((_, idx) => (
-                      <div
-                        key={idx}
-                        className="absolute left-0 right-0 border-t border-dashed border-border"
-                        style={{ top: `${idx * pageHeightPx}px` }}
-                      />
-                    ))}
-                    <div className="p-8 prose prose-sm max-w-none" style={{ width: `${pageWidthPx}px` }} dangerouslySetInnerHTML={{ __html: htmlContent }} />
-                  </div>
-                )}
-
-                {/* Signatures overlay */}
-                {visiblePlaced.map((p) => (
-                  <PlacedSignature key={p.id} position={p} pageHeightPx={pageHeightPx} pageWidthPx={pageWidthPx} />
-                ))}
-              </div>
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <span className="text-sm min-w-[60px] text-center">{Math.round(scale * 100)}%</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setScale((s) => Math.min(1.2, Number((s + 0.1).toFixed(2))))}
+                disabled={scale >= 1.2}
+              >
+                <ZoomIn className="h-4 w-4" />
+              </Button>
             </div>
+
+            {numPages > 1 && (
+              <span className="text-sm text-muted-foreground">
+                {numPages} página{numPages > 1 ? 's' : ''}
+              </span>
+            )}
+
+            {selectedSignerId && (
+              <div className="flex items-center gap-2 text-sm text-primary animate-pulse">
+                <MousePointer className="h-4 w-4" />
+                Clique no documento para posicionar
+              </div>
+            )}
           </div>
 
-          {/* Sidebar - 30% */}
-          <div className="flex-[3] flex flex-col gap-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <FileSignature className="h-5 w-5" />
-                  Posicionar Assinaturas
-                </CardTitle>
-                <CardDescription>
-                  Arraste cada assinatura para o local desejado. No preview HTML, você pode descer para páginas seguintes.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {positions.map((pos) => (
-                  <div key={pos.id}>
-                    <DraggableSignature id={pos.id} label={pos.label} placed={pos.placed} />
+          {/* Scrollable canvas */}
+          <div
+            ref={canvasRef}
+            className={cn(
+              "flex-1 overflow-auto flex justify-center p-4 bg-muted/50",
+              selectedSignerId && "cursor-crosshair"
+            )}
+            onClick={handleCanvasClick}
+          >
+            <div
+              className="relative bg-white shadow-lg"
+              style={{
+                width: `${pageWidthPx}px`,
+                minHeight: `${totalHeightPx}px`,
+              }}
+            >
+              {/* Page separators */}
+              {Array.from({ length: numPages }).map((_, idx) => (
+                <div
+                  key={`page-sep-${idx}`}
+                  className="absolute left-0 right-0 border-t-2 border-dashed border-muted-foreground/30 pointer-events-none"
+                  style={{ top: `${idx * pageHeightPx}px` }}
+                >
+                  {idx > 0 && (
+                    <span className="absolute -top-3 left-2 text-[10px] bg-background px-1 text-muted-foreground">
+                      Página {idx + 1}
+                    </span>
+                  )}
+                </div>
+              ))}
+
+              {/* HTML Content */}
+              <div
+                ref={contentRef}
+                className="p-8 prose prose-sm max-w-none"
+                style={{ width: `${pageWidthPx}px` }}
+                dangerouslySetInnerHTML={{ __html: htmlContent || '' }}
+              />
+
+              {/* Placed signatures */}
+              {placedPositions.map((pos) => {
+                const topPx = (pos.page - 1) * pageHeightPx + (pos.y / 100) * pageHeightPx;
+                const leftPx = (pos.x / 100) * pageWidthPx;
+
+                return (
+                  <div
+                    key={pos.id}
+                    className={cn(
+                      "absolute flex flex-col items-center gap-1 px-3 py-2 rounded-lg border-2 transition-all cursor-pointer",
+                      selectedSignerId === pos.id
+                        ? "border-primary bg-primary/10 shadow-lg ring-2 ring-primary/50"
+                        : "border-green-500 bg-green-50 dark:bg-green-950/90 hover:shadow-md"
+                    )}
+                    style={{
+                      left: `${leftPx}px`,
+                      top: `${topPx}px`,
+                      transform: 'translate(-50%, -50%)',
+                      zIndex: selectedSignerId === pos.id ? 100 : 10,
+                    }}
+                    onClick={(e) => handlePlacedSignatureClick(e, pos.id)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileSignature className="h-4 w-4 text-green-600" />
+                      <span className="text-xs font-medium text-green-800 dark:text-green-200 whitespace-nowrap">
+                        {pos.label}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-green-600 whitespace-nowrap">
+                      ____________________
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Sidebar - 30% */}
+        <div className="flex-[3] flex flex-col gap-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileSignature className="h-5 w-5" />
+                Posicionar Assinaturas
+              </CardTitle>
+              <CardDescription>
+                Clique em uma assinatura abaixo, depois clique no documento para posicioná-la
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {positions.map((pos) => (
+                <div
+                  key={pos.id}
+                  onClick={() => setSelectedSignerId(pos.id)}
+                  className={cn(
+                    "flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all",
+                    selectedSignerId === pos.id
+                      ? "border-primary bg-primary/10 shadow-md"
+                      : pos.placed
+                        ? "border-green-500 bg-green-50 dark:bg-green-950/30 hover:bg-green-100"
+                        : "border-muted hover:border-primary/50 hover:bg-muted/50"
+                  )}
+                >
+                  <FileSignature className={cn("h-5 w-5", pos.placed ? "text-green-600" : "text-muted-foreground")} />
+                  <div className="flex-1">
+                    <span className="text-sm font-medium">{pos.label}</span>
                     {pos.placed && (
-                      <p className="text-xs text-muted-foreground mt-1 ml-2">
+                      <p className="text-xs text-muted-foreground">
                         Página {pos.page} • X: {Math.round(pos.x)}% Y: {Math.round(pos.y)}%
                       </p>
                     )}
                   </div>
-                ))}
-              </CardContent>
-            </Card>
+                  {pos.placed && <Check className="h-5 w-5 text-green-500" />}
+                  {selectedSignerId === pos.id && (
+                    <MousePointer className="h-4 w-4 text-primary animate-bounce" />
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
 
-            <div className="flex flex-col gap-2">
-              <Button onClick={() => onComplete(placedPositions)} disabled={!allPlaced} className="w-full">
-                <Check className="h-4 w-4 mr-2" />
-                Confirmar Posições
-              </Button>
-              <Button variant="outline" onClick={onCancel} className="w-full">
-                Voltar
-              </Button>
-              {!allPlaced && (
-                <p className="text-xs text-center text-muted-foreground">Posicione todas as assinaturas para continuar</p>
-              )}
-            </div>
+          <Card className="flex-1">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Instruções</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <p>1. Clique em uma assinatura na lista acima</p>
+              <p>2. Clique no local desejado no documento</p>
+              <p>3. Para mover, clique na assinatura posicionada e depois no novo local</p>
+              <p>4. Role o documento para acessar outras páginas</p>
+              <p>5. Confirme quando todas estiverem posicionadas</p>
+            </CardContent>
+          </Card>
+
+          <div className="flex flex-col gap-2">
+            <Button
+              onClick={() => onComplete(placedPositions)}
+              disabled={!allPlaced}
+              className="w-full"
+            >
+              <Check className="h-4 w-4 mr-2" />
+              Confirmar Posições
+            </Button>
+            <Button variant="outline" onClick={onCancel} className="w-full">
+              Voltar
+            </Button>
+            {!allPlaced && (
+              <p className="text-xs text-center text-muted-foreground">
+                Posicione todas as assinaturas para continuar
+              </p>
+            )}
           </div>
         </div>
-      </DndContext>
+      </div>
     </div>
   );
 }
